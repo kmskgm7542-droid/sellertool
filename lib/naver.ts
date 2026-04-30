@@ -1,11 +1,34 @@
 const NAVER_API_BASE = 'https://openapi.naver.com/v1';
 
-const naverHeaders = {
-  'X-Naver-Client-Id': process.env.NAVER_CLIENT_ID!,
-  'X-Naver-Client-Secret': process.env.NAVER_CLIENT_SECRET!,
-};
+interface NaverShoppingApiResponse {
+  lastBuildDate: string;
+  total: number;
+  start: number;
+  display: number;
+  items: Array<{
+    title: string;
+    link: string;
+    image: string;
+    lprice: string;
+    hprice: string;
+    mallName: string;
+    productId: string;
+    category1: string;
+  }>;
+}
 
-export async function searchNaverShopping(keyword: string, display = 100) {
+export async function searchNaverShopping(keyword: string, display = 100): Promise<NaverShoppingApiResponse> {
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('Naver API 환경변수(NAVER_CLIENT_ID, NAVER_CLIENT_SECRET)가 설정되지 않았습니다.');
+  }
+
+  const headers = {
+    'X-Naver-Client-Id': clientId,
+    'X-Naver-Client-Secret': clientSecret,
+  };
+
   const params = new URLSearchParams({
     query: keyword,
     display: String(display),
@@ -13,7 +36,7 @@ export async function searchNaverShopping(keyword: string, display = 100) {
   });
 
   const res = await fetch(`${NAVER_API_BASE}/search/shop.json?${params}`, {
-    headers: naverHeaders,
+    headers,
     next: { revalidate: 300 },
   });
 
@@ -25,6 +48,17 @@ export async function searchNaverShopping(keyword: string, display = 100) {
 }
 
 export async function getNaverShoppingTrend(keyword: string) {
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const clientSecret = process.env.NAVER_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('Naver API 환경변수(NAVER_CLIENT_ID, NAVER_CLIENT_SECRET)가 설정되지 않았습니다.');
+  }
+
+  const headers = {
+    'X-Naver-Client-Id': clientId,
+    'X-Naver-Client-Secret': clientSecret,
+  };
+
   const endDate = new Date();
   const startDate = new Date();
   startDate.setMonth(startDate.getMonth() - 3);
@@ -41,7 +75,7 @@ export async function getNaverShoppingTrend(keyword: string) {
   const res = await fetch(`${NAVER_API_BASE}/datalab/shopping/categories`, {
     method: 'POST',
     headers: {
-      ...naverHeaders,
+      ...headers,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),

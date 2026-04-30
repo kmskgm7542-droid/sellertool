@@ -4,12 +4,13 @@ import { searchNaverShopping } from '@/lib/naver';
 export async function GET(req: NextRequest) {
   const keyword = req.nextUrl.searchParams.get('keyword');
 
-  if (!keyword) {
-    return NextResponse.json({ error: '키워드를 입력하세요' }, { status: 400 });
+  const trimmed = keyword?.trim() ?? '';
+  if (!trimmed || trimmed.length > 80) {
+    return NextResponse.json({ error: '키워드는 1~80자 이내로 입력하세요' }, { status: 400 });
   }
 
   try {
-    const data = await searchNaverShopping(keyword);
+    const data = await searchNaverShopping(trimmed);
     return NextResponse.json(data);
   } catch (error) {
     console.error('Naver search error:', error);
