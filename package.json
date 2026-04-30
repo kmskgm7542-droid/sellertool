@@ -9,8 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@auth/core": "^0.34.3",
-    "@base-ui/react": "^1.4.1",
     "@radix-ui/react-slot": "^1.2.4",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
