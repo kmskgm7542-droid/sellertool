@@ -16,12 +16,16 @@ export function calcCompetition(
   const hprices = items.map((i) => Number(i.hprice)).filter((p) => p > 0);
   const allPrices = [...lprices, ...hprices].sort((a, b) => a - b);
 
-  const minPrice = Math.min(...lprices);
-  const maxPrice = hprices.sort((a, b) => a - b)[Math.floor(hprices.length / 2)];
-  const avgPrice = Math.round(lprices.reduce((a, b) => a + b, 0) / lprices.length);
-  const avgReviews = Math.floor(
-    items.reduce((a, b) => a + (b.reviewCount || 0), 0) / items.length
-  );
+  const minPrice = lprices.length > 0 ? Math.min(...lprices) : 0;
+  const maxPrice = hprices.length > 0
+    ? [...hprices].sort((a, b) => a - b)[Math.floor(hprices.length / 2)]
+    : 0;
+  const avgPrice = lprices.length > 0
+    ? Math.round(lprices.reduce((a, b) => a + b, 0) / lprices.length)
+    : 0;
+  const avgReviews = items.length > 0
+    ? Math.floor(items.reduce((a, b) => a + (b.reviewCount || 0), 0) / items.length)
+    : 0;
   const adDensity = items.length > 0 ? Math.min(items.length / totalProducts, 1) : 0;
 
   void allPrices; // 미래 분포 계산용 예약
@@ -124,10 +128,10 @@ export function parseTrendData(datalabResponse: unknown): {
   trend: MarketSizeData['trend'];
   monthlySearchVolume: number;
 } {
-  const response = datalabResponse as {
-    results?: Array<{ data: Array<{ period: string; ratio: number }> }>;
-  };
-  const data = response?.results?.[0]?.data ?? [];
+  const results = Array.isArray((datalabResponse as { results?: unknown[] })?.results)
+    ? (datalabResponse as { results: Array<{ data: Array<{ period: string; ratio: number }> }> }).results
+    : [];
+  const data = results[0]?.data ?? [];
   const trendData: TrendPoint[] = data.map((d) => ({
     period: d.period,
     ratio: d.ratio,
