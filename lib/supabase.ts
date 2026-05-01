@@ -1,21 +1,38 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-export const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+function getSupabaseClient(): SupabaseClient {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
-export const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseAdmin(): SupabaseClient {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
+
+export const supabase = {
+  get client() {
+    return getSupabaseClient();
+  },
+};
+
+export const supabaseAdmin = {
+  from: (table: string) => getSupabaseAdmin().from(table),
+  auth: {
+    getUser: (token?: string) => getSupabaseAdmin().auth.getUser(token),
+  },
+};
 
 export async function saveSearchHistory(
   userId: string,
   keyword: string,
   summary: { verdict: string; totalScore: number }
 ) {
-  return supabaseAdmin.from('search_history').insert({
+  return getSupabaseAdmin().from('search_history').insert({
     user_id: userId,
     keyword,
     result_summary: summary,
@@ -23,7 +40,7 @@ export async function saveSearchHistory(
 }
 
 export async function saveReport(userId: string, keyword: string, reportData: object) {
-  return supabaseAdmin.from('saved_reports').insert({
+  return getSupabaseAdmin().from('saved_reports').insert({
     user_id: userId,
     keyword,
     report_data: reportData,
@@ -31,7 +48,7 @@ export async function saveReport(userId: string, keyword: string, reportData: ob
 }
 
 export async function getSearchHistory(userId: string) {
-  return supabaseAdmin
+  return getSupabaseAdmin()
     .from('search_history')
     .select('*')
     .eq('user_id', userId)
@@ -40,7 +57,7 @@ export async function getSearchHistory(userId: string) {
 }
 
 export async function getSavedReports(userId: string) {
-  return supabaseAdmin
+  return getSupabaseAdmin()
     .from('saved_reports')
     .select('*')
     .eq('user_id', userId)
