@@ -8,12 +8,52 @@ import {
   calcVerdict,
   parseTrendData,
 } from '@/lib/analysis';
-import type { NaverShoppingItem } from '@/types';
+import type { NaverShoppingItem, MarketAnalysis } from '@/types';
+
+function getMockData(keyword: string): MarketAnalysis {
+  const competition = {
+    totalProducts: 1842,
+    minPrice: 12900,
+    avgPrice: 38400,
+    maxPrice: 189000,
+    avgReviews: 342,
+    adDensity: 0.32,
+    items: [],
+  };
+  const marketSize = {
+    monthlySearchVolume: 45200,
+    estimatedMonthlyRevenue: 26050560,
+    trend: 'rising' as const,
+    trendData: [
+      { period: '2025-02', ratio: 72 },
+      { period: '2025-03', ratio: 85 },
+      { period: '2025-04', ratio: 100 },
+    ],
+  };
+  const competitionScore = 28;
+  const costScore = 15;
+  const growthScore = 25;
+  return {
+    keyword,
+    competition,
+    marketSize,
+    costRatio: null,
+    verdict: calcVerdict(competitionScore, costScore, growthScore),
+    createdAt: new Date().toISOString(),
+  };
+}
 
 export async function GET(req: NextRequest) {
   const keyword = req.nextUrl.searchParams.get('keyword');
   if (!keyword) {
     return NextResponse.json({ error: '키워드 필요' }, { status: 400 });
+  }
+
+  const clientId = process.env.NAVER_CLIENT_ID;
+  const isMock = !clientId || clientId === '여기에_입력';
+
+  if (isMock) {
+    return NextResponse.json(getMockData(keyword));
   }
 
   try {
@@ -22,7 +62,6 @@ export async function GET(req: NextRequest) {
       getNaverShoppingTrend(keyword).catch(() => null),
     ]);
 
-    // Naver API 응답에 reviewCount 필드가 없으므로 기본값 0으로 보강
     const items: NaverShoppingItem[] = (searchData.items ?? []).map((item) => ({
       ...item,
       reviewCount: 0,

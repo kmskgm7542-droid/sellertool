@@ -61,7 +61,7 @@ export async function getNaverShoppingTrend(keyword: string) {
 
   const endDate = new Date();
   const startDate = new Date();
-  startDate.setMonth(startDate.getMonth() - 3);
+  startDate.setMonth(startDate.getMonth() - 12);
 
   const formatDate = (d: Date) => d.toISOString().split('T')[0];
 
