@@ -61,8 +61,8 @@ export default function HomePage() {
             <div className="max-w-3xl mx-auto text-center">
               {/* 배지 */}
               <div className="inline-flex items-center gap-2 bg-white/10 border border-white/20 rounded-full px-4 py-1.5 mb-5">
-                <span className="text-orange-400 text-sm">🔥</span>
-                <span className="text-white/90 text-sm font-medium">완전 무료 · 회원가입 없음</span>
+                <span className="text-sm">🚀</span>
+                <span className="text-white/90 text-sm font-medium">셀러 3,000명이 쓰는 소싱툴</span>
               </div>
 
               {/* 헤드라인 */}
