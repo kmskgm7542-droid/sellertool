@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Badge } from '@/components/ui/badge';
+import LoginButton from '@/components/login-button';
 
 export default function Header() {
   return (
@@ -11,9 +11,7 @@ export default function Header() {
           </div>
           <span className="text-lg font-bold text-slate-900">셀러툴</span>
         </Link>
-        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border border-blue-200 hidden sm:flex">
-          무료 · 로그인 불필요
-        </Badge>
+        <LoginButton />
       </div>
     </header>
   );
