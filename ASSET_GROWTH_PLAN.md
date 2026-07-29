@@ -58,8 +58,17 @@
 └─ [별개] 티원/NAVI 자동매매 (navi-ev-trading)
 ```
 
+## 구버전(seller-tool, Python) 자산 흡수 (전신 리포 — 폐기 금지)
+> `seller-tool`(FastAPI) = 이 sellertool의 전신. 기능 중복이나 아래 로직은 신버전에 없음 → TS로 포팅 흡수 후 아카이브.
+- [ ] **정량 분석엔진** (`analyzers/market.py·competition.py·recommendation.py`): 시장규모 추정(검색비율→월검색수→전환율→거래액)·12개월 매출예측·손익분기·HHI+리뷰장벽 포화도 산식·가격 3전략 → TS 포팅
+- [ ] **급상승 트렌드 스캐너** (`services/trend_scanner.py`): 8카테고리 ~80 시드키워드 + 데이터랩 증감률 임계 탐지
+- [ ] **텔레그램 알림 + 스케줄 모니터링** (일일 리포트·급등 알림, 데이터랩 공식 API 기반)
+- ⛔ **흡수 배제**: 쿠팡 Playwright 크롤링·네이버 HTML 스크래핑·봇감지 우회(`navigator.webdriver` 위장 등) — **플랫폼 약관 위반**. "공식 API only" 유지. 쿠팡 필요 시 파트너스 공식 API로 재구현.
+- [ ] 완료 후 `gh repo edit kmskgm7542-droid/seller-tool --archived` (삭제 금지)
+
 ## 다음 액션 (이 세션에서 이어갈 것)
 1. sellertool 완성도 진단 → 실동작 (`START_HERE.md`)
 2. 큐텐재팬 데이터 소스 추가 설계
-3. 텔레그램 알림 봇 배선
+3. 구버전 정량엔진 흡수 (위 섹션)
+4. 텔레그램 알림 봇 배선
 > 각 방법은 "만들면서 네비부자 콘텐츠로 공유" → 브랜드 성장과 동시 진행.
