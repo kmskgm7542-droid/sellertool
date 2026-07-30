@@ -9,12 +9,20 @@
 | 항목 | 결과 |
 |---|---|
 | `npm install` | ✅ 정상 |
-| `npm test` (Jest) | ✅ 7/7 통과 (`__tests__/analysis.test.ts`) |
+| `npm test` (Jest) | ✅ 15/15 통과 (`__tests__/analysis.test.ts`) |
 | `npm run build` (Next.js 16.2.4) | ✅ 성공 — TypeScript 검사 포함 |
 | API 라우트 | `/api/analyze` · `/api/naver/search` · `/api/naver/trends` · `/api/image-analyze` · `/api/reports` · `/api/auth/[...nextauth]` |
 | 실동작 (네이버 실응답·판정·인증) | ⏳ **미검증 — API 키 없음** (아래 블로커) |
 
 정적 품질(빌드·테스트·타입)은 문제 없음. **남은 건 실제 키를 넣고 돌려보는 실동작 검증뿐.**
+
+### ✅ 2026-07-30 반영 완료 — EXEC_REVIEW 1개월 로드맵 일부
+- **수수료 개편**: 스마트스토어 2.73% / 브랜드스토어 3.64%(옵션 신설) / 쿠팡
+  최종결제금액 기준 4~10.9%(보수 상한 기본 + `feeRateOverride`) — `lib/analysis.ts`
+- **환율 시나리오 마진 가드레일**: `calcFxScenarios` (−5%/기준/+5%, 목표 마진 미달
+  경고. 일본 역직구 시 850/900/950 전달 가능) + 원가율 계산기 UI 패널
+- 남은 연계 작업: GO 판정(`calcVerdict`) 파이프라인에 환율 가드레일 통합 —
+  Phase 3 역직구 마진 판정 카드에서 함께 배선
 
 ## 🚧 블로커 — CEO 준비물 (키 발급)
 
