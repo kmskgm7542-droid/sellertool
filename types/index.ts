@@ -32,14 +32,27 @@ export interface MarketSizeData {
   trendData: TrendPoint[];
 }
 
+export type Platform = 'smartstore' | 'brandstore' | 'coupang';
+
 export interface CostCalculatorInput {
   costCNY: number;
   sellPriceKRW: number;
-  platform: 'smartstore' | 'coupang';
+  platform: Platform;
   exchangeRate?: number;
   shippingCostKRW?: number;
   customsDutyRate?: number;
   inspectionFeeKRW?: number;
+  /** 플랫폼 기본 수수료율 대신 직접 지정 (예: 쿠팡 카테고리별 4~10.9%) */
+  feeRateOverride?: number;
+}
+
+/** 환율 시나리오 1행 — 환율 변동 시 마진 가드레일 점검용 */
+export interface FxScenarioRow {
+  exchangeRate: number;
+  marginKRW: number;
+  marginRate: number;
+  /** 해당 환율에서도 목표 마진율을 지키는지 */
+  ok: boolean;
 }
 
 export interface CostRatioData {
