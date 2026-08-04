@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git pull)",
+      "Bash(git pull *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(git add *)",
+      "Bash(git fetch *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(./.venv/bin/python -m pytest *)",
+      "mcp__Claude_Code_Remote__send_later",
+      "mcp__Claude_Code_Remote__update_trigger",
+      "mcp__Claude_Code_Remote__list_triggers"
+    ]
+  }
+}
