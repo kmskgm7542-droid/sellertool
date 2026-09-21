@@ -4,6 +4,15 @@
 > 작성: 2026-07-30. 배경 문서: `START_HERE.md`(프로젝트 소개) · `ASSET_GROWTH_PLAN.md`(전략).
 > ⭐ **2026-07-30 전략 재점검 완료** → `EXEC_REVIEW_2026-07.md` (틱톡샵재팬·엔저·MCP 상품화·규제 변화 반영. 아래 Phase 계획보다 우선함)
 
+## 🎉 2026-09-21 진행 로그 — 첫 배포 + 네이버 등록 완료
+
+- **실서비스 배포 완료**: https://sellertool.vercel.app (Vercel, master 브랜치 자동 배포)
+  - ⚠️ `seller-tool.vercel.app`(하이픈)은 **타사(독일 SellerTool) 소유** — 절대 사용 금지. 우리 주소는 하이픈 없는 `sellertool.vercel.app`
+  - 빌드 실패 원인이었던 빈 환경변수 → `new URL('')` 버그 수정됨 (`lib/config.ts`의 `||` 폴백)
+- **네이버 서치어드바이저 등록 완료**: 소유확인(HTML 파일 `public/naverf89...html`) + 사이트맵 제출 + 웹 페이지 수집 요청까지 완료. 수 일~2주 내 검색 노출 시작 예상
+- **검색·AI 기초 공사 배포됨**: robots.ts(AI 크롤러 10종 허용) · sitemap.ts · llms.txt · JSON-LD · canonical
+- **남은 일**: ① Bing 웹마스터 등록(bing.com/webmasters) ② Vercel 중복 프로젝트 3개 삭제(셀러트루-BR83·Sellertool-kr·판매자-도구) ③ 네이버 API 키 발급(아래 블로커 — 분석 기능 가동) ④ 14일 후 재측정(10/5경: 서치어드바이저 노출·클릭 기준선)
+
 ## 현재 상태 — 완성도 진단 결과 (2026-07-30 실측)
 
 | 항목 | 결과 |
