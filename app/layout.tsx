@@ -22,6 +22,11 @@ export const metadata: Metadata = {
   alternates: {
     canonical: '/',
   },
+  verification: {
+    other: {
+      'naver-site-verification': '4d11f439874cbd4b144ab0eb8931a1269a199c9a',
+    },
+  },
   openGraph: {
     title: '셀러툴 — 이커머스 시장조사 무료 툴',
     description: '키워드 하나로 경쟁 분석 + 원가율 + 시장 진입 판정까지',
