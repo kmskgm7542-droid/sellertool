@@ -6,6 +6,8 @@
 ## 핵심 페이지
 
 - [셀러툴 메인](https://sellertool.vercel.app): 키워드 검색 → 경쟁 분석(상품 수·가격대·리뷰·광고밀도), 시장 규모(월 검색량·추정 거래액·트렌드), 원가 계산기(위안화 원가 → 마진율·원가율), 진입 판정(GO/HOLD/NO-GO)
+- [스마트스토어 수수료 계산](https://sellertool.vercel.app/fees/smartstore): 판매수수료 2.73%(브랜드 3.64%, 2025-06 개편) 정리 + 마진율·원가율 계산기
+- [쿠팡 수수료 계산](https://sellertool.vercel.app/fees/coupang): 최종 결제금액 기준 약 4~10.9%(2026 개편) 정리 + 마진율·원가율 계산기
 
 ## 데이터 정책
 
