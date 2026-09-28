@@ -19,7 +19,7 @@ echo 등록 완료. 해제: schtasks /delete /tn CallVerifyLive /f
 echo.
 echo 지금 5분 동안 시험 대기합니다. 텔레그램 봇에 아래처럼 보내 보세요.
 echo   테스트종목 1000 매수 손절 900 목표 1200 2주
-echo 답장이 오면 "취소" 를 보내 지우세요.
+echo 답장이 오면 취소 라고 보내 지우세요.
 call "%RUN%" 5
 echo 시험 끝. 답장이 안 왔으면 data\live.log 를 올려주세요.
 :end
