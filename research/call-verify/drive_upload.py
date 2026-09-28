@@ -68,17 +68,59 @@ async def main():
             sys.exit(1)
         uploaded = 0
         try:
-            # 드라이브 화면의 숨은 파일 입력을 직접 쓴다(폴더 입력은 제외). 없으면 '신규 → 파일 업로드' 메뉴로 파일 선택 창을 연다.
+            paths = [str(f) for f in files]
+            done = False
+            # 1) 화면의 숨은 파일 입력(폴더 입력 제외)에 직접 넣는다. '신규' 메뉴를 열면 입력이 생기는 경우가 많다.
             inputs = page.locator("input[type=file]:not([webkitdirectory])")
+            if await inputs.count() == 0:
+                try:
+                    await page.get_by_role("button", name="신규").first.click(timeout=10000)
+                    await page.wait_for_timeout(1000)
+                except Exception:
+                    pass
             if await inputs.count() > 0:
-                await inputs.first.set_input_files([str(f) for f in files])
-            else:
-                async with page.expect_file_chooser(timeout=15000) as fc_info:
-                    await page.get_by_role("button", name="신규").first.click()
-                    await page.wait_for_timeout(800)
-                    await page.get_by_text("파일 업로드", exact=False).first.click()
-                fc = await fc_info.value
-                await fc.set_files([str(f) for f in files])
+                await inputs.first.set_input_files(paths)
+                done = True
+                print("  방식: 숨은 파일 입력")
+            # 2) 메뉴 항목을 강제 클릭해 파일 선택 창을 연다(항목이 가려져 있어도 동작)
+            if not done:
+                try:
+                    async with page.expect_file_chooser(timeout=15000) as fc_info:
+                        item = page.get_by_role("menuitem", name="파일 업로드").first
+                        if await item.count() == 0:
+                            item = page.get_by_text("파일 업로드", exact=False).first
+                        try:
+                            await item.click(force=True, timeout=5000)
+                        except Exception:
+                            await item.dispatch_event("click")
+                    fc = await fc_info.value
+                    await fc.set_files(paths)
+                    done = True
+                    print("  방식: 메뉴 → 파일 선택 창")
+                except Exception as exc:
+                    print(f"  메뉴 방식 실패: {type(exc).__name__}: {str(exc)[:120]}")
+                    await page.keyboard.press("Escape")
+            # 3) 끌어다 놓기(drop) 이벤트로 넣는다 — 파일 내용을 페이지 안에서 File 객체로 만들어 전달
+            if not done:
+                import base64
+                payload = [{"name": f.name, "b64": base64.b64encode(f.read_bytes()).decode()} for f in files]
+                dt = await page.evaluate_handle("""(items) => {
+                  const dt = new DataTransfer();
+                  for (const it of items) {
+                    const bin = atob(it.b64); const arr = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+                    dt.items.add(new File([arr], it.name, { type: 'application/octet-stream' }));
+                  }
+                  return dt;
+                }""", payload)
+                target = page.locator("[role=main]").first
+                if await target.count() == 0:
+                    target = page.locator("body")
+                for ev in ("dragenter", "dragover", "drop"):
+                    await target.dispatch_event(ev, {"dataTransfer": dt})
+                    await page.wait_for_timeout(300)
+                done = True
+                print("  방식: 끌어다 놓기 이벤트")
             # 완료 확인: 파일 목록에 시각 접두어가 보일 때까지 기다린다
             for _ in range(60):
                 await page.wait_for_timeout(2000)
