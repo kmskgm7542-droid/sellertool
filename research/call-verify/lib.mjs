@@ -67,84 +67,124 @@ export function parseStopBasis(text) {
   return { basis: 'TOUCH', hours: null, flags: ['손절 기준 미명시(터치 적용)'] };
 }
 
-export function parseCall(text, rules) {
+// 숫자 뒤에 이런 말이 붙으면 가격이 아니다(기간·비율·차트 용어)
+const NOT_PRICE = String.raw`(?!\s*(?:%|퍼|배|번|개|명|일|주|개월|달|월|년|시간|분|봉|선|이평|파|차|층|k|K|불|달러|\$))`;
+const P = NUM + String.raw`\s*(만|천)?\s*원?` + NOT_PRICE; // 가격 하나: [숫자, 단위]
+// "매수유효" "매수가 안오면" "매수 유지" 는 진입 지시가 아니다
+const ENTRY_WORD = String.raw`(?:분할\s*)?(?:매수|진입|롱)(?!\s*(?:유효|가\s*안|유지|하지\s*마|금지))`;
+// 진입 앵커: "174매수" "16~15매수자리" "1850이하 매수진입" "185부근 매수" "현재가 매수"
+const ENTRY_RE = new RegExp(
+  String.raw`(?:` + P + String.raw`(?:\s*~\s*` + P + String.raw`)?\s*(?:이하|이상|부근|근처|대|정도|까지|위|아래)?\s*(?:에서|에|부터)?\s*` + ENTRY_WORD +
+  String.raw`|현재가\s*(?:에서|에)?\s*` + ENTRY_WORD + String.raw`?)`,
+  'g',
+);
+// 손절: "160이탈손절" "240이탈시 손절" "13천 칼손절" "480컷" "473원 일봉종가이탈컷" "손절 8%대 이하"(무시)
+const SL_RE = new RegExp(P + String.raw`\s*(?:원)?\s*(?:[가-힣]{0,10}?)\s*(?:칼손절|손절가|손절|컷|스탑|이탈시\s*매도|이탈하면\s*매도)`);
+const SL_RE2 = new RegExp(String.raw`(?:손절가|손절|컷)\s*(?:은|는|가|을|를|:)?\s*` + P);
+// 목표: "목표는 230원" "목표 500정도" "31원익절" "400원봅니다" "4500원위에" "700원이상" "19천~2만도달"
+const TP_RANGE_RE = new RegExp(P + String.raw`\s*~\s*` + P, 'g');
+const TP_WORD_RE = new RegExp(P + String.raw`\s*(?:정도|대)?\s*(?:익절|목표|봅니다|보겠|볼수|볼\s*수|위에|이상|까지|노려|도달|가능|갈|간다|보고|보면)`, 'g');
+const TP_LEAD_RE = new RegExp(String.raw`(?:목표가?|익절가?|익절은|목표는)\s*(?:은|는|가|:)?\s*` + P, 'g');
+const TP_UNIT_RE = new RegExp(NUM + String.raw`\s*(?:(만|천)\s*원?|원)` + NOT_PRICE, 'g');
+
+const strip = (s) => s.replace(/(을|를|은|는|이|가|도|만|의|에|로)$/, '');
+
+function finishCall(seg, entryMode, entry, entryRange, name, rules, whole) {
   const flags = [];
-  const src = normalizePrices(text).replace(/\s+/g, ' ').trim();
-  let w = src;
-
-  // 진입
-  let entry = null;
-  let entryMode = null;
-  const e = w.match(new RegExp(NUM + UNIT + String.raw`\s*(?:에\s*)?(?:매수|진입)`));
-  if (e) {
-    entry = toPrice(e[1], e[2]);
-    entryMode = 'PRICE';
-    w = blank(w, e);
-  } else if (/현재가/.test(w)) {
-    entryMode = 'MARKET';
-  } else {
-    flags.push('진입 정보 없음');
-  }
-
-  // 종목명: 해시태그 우선, 없으면 진입가 바로 앞 단어
-  let name = null;
-  const tag = src.match(/#([^\s#]+)/);
-  if (tag) name = tag[1];
-  else if (e) {
-    const before = src.slice(0, e.index).trim().split(' ');
-    name = before[before.length - 1] || null;
-  }
-  if (name) name = name.replace(/(을|를|은|는|이|가|도)$/, '');
-  if (!name) flags.push('종목명 없음');
+  let w = seg;
+  if (entryRange) flags.push('진입가 범위(보수적으로 위쪽 값 적용)');
 
   // 손절
   let sl = null;
-  const s = w.match(new RegExp(NUM + UNIT + String.raw`\s*(?:칼손절|손절|컷)`));
+  let s = w.match(SL_RE);
+  if (!s) s = w.match(SL_RE2);
   if (s) {
     sl = toPrice(s[1], s[2]);
     w = blank(w, s);
-  } else {
-    flags.push('손절가 없음');
-  }
+  } else flags.push('손절가 없음');
 
-  // 목표가: 범위 먼저, 그다음 단일가(단위 또는 '원'이 붙은 숫자만)
+  // 목표가
   const raw = [];
-  const rangeRe = new RegExp(NUM + String.raw`\s*(만|천)?\s*원?\s*~\s*` + NUM + String.raw`\s*(만|천)?\s*원?`, 'g');
-  for (const m of [...w.matchAll(rangeRe)]) {
+  for (const m of [...w.matchAll(TP_RANGE_RE)]) {
     const lo = toPrice(m[1], m[2] ?? m[4]);
     const hi = toPrice(m[3], m[4]);
-    raw.push({ price: rules.rangePick === 'mid' ? (lo + hi) / 2 : lo, range: [lo, hi] });
+    raw.push({ price: rules.rangePick === 'mid' ? (lo + hi) / 2 : Math.min(lo, hi), range: [lo, hi] });
     flags.push(rules.rangePick === 'mid' ? '목표가 범위(중앙 적용)' : '목표가 범위(하단 적용)');
     w = blank(w, m);
   }
-  for (const m of w.matchAll(new RegExp(NUM + String.raw`\s*(?:(만|천)\s*원?|원)`, 'g'))) {
-    raw.push({ price: toPrice(m[1], m[2]) });
+  for (const re of [TP_LEAD_RE, TP_WORD_RE]) {
+    for (const m of [...w.matchAll(re)]) {
+      raw.push({ price: toPrice(m[1], m[2]) });
+      w = blank(w, m);
+    }
   }
-  raw.sort((a, b) => a.price - b.price);
-  const tps = raw.filter((t) => entry == null || t.price > entry);
-  if (tps.length < raw.length) flags.push('진입가 이하 목표가 제외');
+  for (const m of w.matchAll(TP_UNIT_RE)) raw.push({ price: toPrice(m[1], m[2]) });
+  const seen = new Set();
+  const uniq = raw.filter((t) => (seen.has(t.price) ? false : seen.add(t.price))).sort((a, b) => a.price - b.price);
+  const above = entry != null ? entry : sl != null ? sl : 0;
+  const tps = uniq.filter((t) => t.price > above);
+  if (tps.length < uniq.length) flags.push('진입가 이하 목표가 제외');
   if (!tps.length) flags.push('목표가 없음');
   tps.forEach((t) => (t.weight = 1 / tps.length));
 
-  const hz = parseHorizon(src, rules);
-  const sb = parseStopBasis(src);
+  const hz = parseHorizon(/(단기|중기|장기|\d\s*(?:일|주|개월))/.test(seg) ? seg : whole, rules);
+  const sb = parseStopBasis(/종가|시간/.test(seg) ? seg : whole);
   flags.push(...hz.flags, ...sb.flags);
-
+  if (/(불|달러|\$)/.test(seg)) flags.push('달러 표시(미지원)');
   if (entry != null && sl != null && sl >= entry) flags.push('손절가가 진입가 이상');
+  if (!name) flags.push('종목명 없음');
 
-  const ok = entryMode != null && sl != null && tps.length > 0 && !(entry != null && sl >= entry);
-  return {
-    ok,
-    name,
-    entryMode,
-    entry,
-    sl,
-    tps,
-    horizonDays: hz.days,
-    stopBasis: sb.basis,
-    stopHours: sb.hours,
-    flags,
-  };
+  const ok = entryMode != null && sl != null && tps.length > 0 && !(entry != null && sl >= entry) && !/(불|달러|\$)/.test(seg);
+  return { ok, name, entryMode, entry, sl, tps, horizonDays: hz.days, stopBasis: sb.basis, stopHours: sb.hours, flags, segment: seg };
+}
+
+// 한 글에 여러 종목의 콜이 있을 수 있다 → "매수" 앵커마다 하나의 콜로 자른다
+export function parseCalls(text, rules) {
+  const src = normalizePrices(text).replace(/https?:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim();
+  const anchors = [...src.matchAll(ENTRY_RE)];
+  if (!anchors.length) {
+    const c = finishCall(src, null, null, false, (src.match(/#([^\s#]+)/) || [])[1] ?? null, rules, src);
+    c.flags.unshift('진입 정보 없음');
+    return [c];
+  }
+  const calls = [];
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const segStart = i === 0 ? 0 : anchors[i - 1].index + anchors[i - 1][0].length;
+    const segEnd = i + 1 < anchors.length ? anchors[i + 1].index : src.length;
+    // 종목명: 앵커 바로 앞 단어(같은 문장 안), 없으면 해시태그
+    const before = src.slice(segStart, a.index).trim().split(/[\s,·]+/).filter(Boolean);
+    let name = null;
+    for (let j = before.length - 1; j >= 0 && j >= before.length - 3; j--) {
+      const cand = strip(before[j].replace(/^#/, ''));
+      const stop = /^(오늘|내일|지금|다시|단타|단기|스윙|중기|장기|사생팬|회원|전용|현재가|여기|이건|그리고|또는|리스크|추세|눌림|돌파|매도|익절|손절|분할|자리|부근|및|등|약|각|그|이|저|더|좀|꼭|잘)$/;
+      // 바로 앞 단어는 한 글자 종목명("넴")도 허용, 그 앞 단어는 두 글자 이상만
+      const minLen = j === before.length - 1 ? 1 : 2;
+      if (new RegExp(`^[가-힣A-Za-z][가-힣A-Za-z0-9]{${minLen - 1},}$`).test(cand) && !stop.test(cand)) {
+        name = cand;
+        break;
+      }
+    }
+    if (!name) name = (src.match(/#([^\s#]+)/) || [])[1] ?? null;
+    let entryMode;
+    let entry = null;
+    let range = false;
+    if (a[1] != null) {
+      entryMode = 'PRICE';
+      const p1 = toPrice(a[1], a[2]);
+      if (a[3] != null) {
+        range = true;
+        entry = Math.max(p1, toPrice(a[3], a[4]));
+      } else entry = p1;
+    } else entryMode = 'MARKET';
+    const seg = src.slice(a.index + a[0].length, segEnd);
+    calls.push(finishCall(seg, entryMode, entry, range, name, rules, src));
+  }
+  return calls;
+}
+
+export function parseCall(text, rules) {
+  return parseCalls(text, rules)[0];
 }
 
 // ─────────────────────── 시뮬레이터 ───────────────────────

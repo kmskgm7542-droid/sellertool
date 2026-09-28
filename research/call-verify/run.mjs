@@ -11,7 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RULES, COSTS, CRITERIA } from './config.mjs';
-import { parseCall, simulate, stats, DAY, HOUR } from './lib.mjs';
+import { parseCalls, simulate, stats, DAY, HOUR } from './lib.mjs';
 import { upbitMarkets, upbitHourly, naverDaily } from './fetch.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -83,33 +83,54 @@ function loadMessages(file) {
 
 async function cmdParse(file) {
   fs.mkdirSync(DATA, { recursive: true });
-  const msgs = loadMessages(file).filter((m) => /(매수|현재가)/.test(m.text) && /(손절|컷)/.test(m.text));
-  let byName = new Map();
-  try {
-    const mk = await upbitMarkets();
-    byName = new Map(mk.filter((x) => x.market.startsWith('KRW-')).map((x) => [x.korean_name, x.market]));
-  } catch {
-    console.log('⚠ 업비트 종목 목록을 받지 못했습니다. 코인/주식 구분은 검토 단계에서 채워 주세요.');
+  const msgs = loadMessages(file).filter((m) => /(매수|진입|현재가)/.test(m.text) && /(손절|컷|스탑)/.test(m.text));
+  // 종목 목록: markets.bat 이 받아둔 파일 우선, 없으면 업비트 API 시도
+  const upbit = new Map();
+  const krx = new Map();
+  const upFile = path.join(DATA, 'upbit_markets.json');
+  const krxFile = path.join(DATA, 'krx_list.json');
+  if (fs.existsSync(upFile)) for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(upFile, 'utf8')))) upbit.set(k, v);
+  else {
+    try {
+      for (const x of await upbitMarkets()) if (x.market.startsWith('KRW-')) upbit.set(x.korean_name, x.market);
+    } catch {
+      console.log('⚠ 업비트 종목 목록이 없습니다(markets.bat 실행 또는 검토 단계에서 직접 입력).');
+    }
   }
-  const rows = msgs.map((m) => {
-    const p = parseCall(m.text, RULES);
-    const flags = [...p.flags];
-    let market = '';
-    let symbol = '';
-    if (p.name && byName.has(p.name)) { market = 'UPBIT'; symbol = byName.get(p.name); }
-    else if (p.name && /^\d{6}$/.test(p.name)) { market = 'KRX'; symbol = p.name; }
-    else flags.push('시장·종목코드 입력 필요');
-    if (!Number.isFinite(m.t) || !m.t) flags.push('게시 시각 없음');
-    if (['week', 'month', 'year', 'unknown'].includes(m.precision)) flags.push(`게시 시각 부정확(${m.precision})`);
-    return {
-      id: m.id, channel: m.channel, t_post_kst: Number.isFinite(m.t) ? kst(m.t) : '', t_post_unix: Number.isFinite(m.t) ? m.t : '',
-      market, symbol, name: p.name ?? '', entry_mode: p.entryMode ?? '', entry: p.entry ?? '', sl: p.sl ?? '',
-      tp1: p.tps[0]?.price ?? '', tp2: p.tps[1]?.price ?? '', tp3: p.tps[2]?.price ?? '',
-      horizon_days: p.horizonDays, stop_basis: p.stopBasis, stop_hours: p.stopHours ?? '',
-      ok: p.ok && market && Number.isFinite(m.t) && m.t && !['week', 'month', 'year', 'unknown'].includes(m.precision) ? 1 : 0,
-      flags: flags.join(' / '), text: m.text,
-    };
-  });
+  if (fs.existsSync(krxFile)) for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(krxFile, 'utf8')))) krx.set(k, v);
+  const lookup = (name) => {
+    if (!name) return null;
+    if (/^\d{6}$/.test(name)) return ['KRX', name];
+    if (upbit.has(name)) return ['UPBIT', upbit.get(name)];
+    if (krx.has(name)) return ['KRX', krx.get(name)];
+    // 부분 일치(예: "엑시" → "엑시인피니티"): 유일할 때만
+    const up = [...upbit.keys()].filter((k) => k.startsWith(name) || name.startsWith(k));
+    if (up.length === 1) return ['UPBIT', upbit.get(up[0])];
+    const kr = [...krx.keys()].filter((k) => k.startsWith(name) || name.startsWith(k));
+    if (kr.length === 1) return ['KRX', krx.get(kr[0])];
+    return null;
+  };
+  const rows = [];
+  for (const m of msgs) {
+    const calls = parseCalls(m.text, RULES);
+    calls.forEach((p, i) => {
+      const flags = [...p.flags];
+      const hit = lookup(p.name);
+      const [market, symbol] = hit ?? ['', ''];
+      if (!hit) flags.push('시장·종목코드 입력 필요');
+      if (!Number.isFinite(m.t) || !m.t) flags.push('게시 시각 없음');
+      if (['week', 'month', 'year', 'unknown'].includes(m.precision)) flags.push(`게시 시각 부정확(${m.precision})`);
+      rows.push({
+        id: calls.length > 1 ? `${m.id}-${i + 1}` : m.id, channel: m.channel,
+        t_post_kst: Number.isFinite(m.t) ? kst(m.t) : '', t_post_unix: Number.isFinite(m.t) ? m.t : '',
+        market, symbol, name: p.name ?? '', entry_mode: p.entryMode ?? '', entry: p.entry ?? '', sl: p.sl ?? '',
+        tp1: p.tps[0]?.price ?? '', tp2: p.tps[1]?.price ?? '', tp3: p.tps[2]?.price ?? '',
+        horizon_days: p.horizonDays, stop_basis: p.stopBasis, stop_hours: p.stopHours ?? '',
+        ok: p.ok && hit && Number.isFinite(m.t) && m.t && !['week', 'month', 'year', 'unknown'].includes(m.precision) ? 1 : 0,
+        flags: flags.join(' / '), text: calls.length > 1 ? `[${i + 1}/${calls.length}] ${p.segment ?? ''}` : m.text,
+      });
+    });
+  }
   const out = path.join(DATA, 'ledger.draft.csv');
   writeCsv(out, COLS, rows);
   const okN = rows.filter((r) => r.ok === 1).length;
