@@ -98,12 +98,22 @@ async def main():
     existing = load(OUT, {"messages": []})
     by_key = {(m.get("channel"), m["id"]): m for m in existing["messages"]}
 
+    def flush():
+        msgs = sorted(by_key.values(), key=lambda m: (m["date_unixtime"], m["id"]))
+        save(OUT, {"name": "call-verify", "messages": msgs})
+        save(STATE, state)
+        return len(msgs)
+
     total_new = 0
     for ch in channels:
         key = str(ch.id)
         min_id = int(state.get(key, 0))
         n = 0
+        print(f"{ch.name}: 수집 중...")
         async for m in client.iter_messages(ch.entity, min_id=min_id, reverse=True):
+            if n and n % 100 == 0:
+                print(f"  {n}건...", end="\r")
+                flush()  # 중간에 끊겨도 여기까지는 남는다
             text = m.message or ""
             urls = []
             for ent, val in (m.get_entities_text() or []):
@@ -138,12 +148,10 @@ async def main():
             state[key] = max(int(state.get(key, 0)), m.id)
             n += 1
         total_new += n
-        print(f"{ch.name}: 새 글 {n}건")
+        total = flush()
+        print(f"{ch.name}: 새 글 {n}건 (저장됨)")
 
-    msgs = sorted(by_key.values(), key=lambda m: (m["date_unixtime"], m["id"]))
-    save(OUT, {"name": "call-verify", "messages": msgs})
-    save(STATE, state)
-    print(f"\n합계 {len(msgs)}건 (신규 {total_new}) → {OUT}")
+    print(f"\n합계 {total}건 (신규 {total_new}) → {OUT}")
     print("다음: 이 result.json 을 김이사에게 업로드하거나, node run.mjs parse data/result.json")
     await client.disconnect()
 
@@ -153,3 +161,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("중단")
+    except Exception as exc:
+        print(f"\n✖ 오류: {type(exc).__name__}: {exc}")
+        print("이 창을 캡처해서 김이사에게 보내주세요. (지금까지 받은 글은 data/result.json 에 저장돼 있습니다)")
