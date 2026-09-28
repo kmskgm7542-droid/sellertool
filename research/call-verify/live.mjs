@@ -26,7 +26,10 @@ const kst = (sec) => new Date((sec + 9 * 3600) * 1000).toISOString().replace('T'
 function makeLookup() {
   const upbit = readJson(path.join(DATA, 'upbit_markets.json'), {});
   const krx = readJson(path.join(DATA, 'krx_list.json'), {});
-  return (name) => {
+  const alias = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나' };
+  for (const k of Object.keys(upbit)) { const m = k.match(/^(.+?)\((.+)\)$/); if (m) { alias[m[1]] = k; alias[m[2]] = k; } }
+  return (raw) => {
+    const name = alias[raw] ?? raw;
     if (!name) return null;
     if (/^\d{6}$/.test(name)) return ['KRX', name];
     if (upbit[name]) return ['UPBIT', upbit[name]];
@@ -105,6 +108,14 @@ async function api(c, method, params) {
   const j = await r.json();
   if (!j.ok) throw new Error(`${method}: ${j.description}`);
   return j.result;
+}
+
+// 다른 스크립트(extract_rules.mjs)가 같은 봇으로 요약을 보낼 때 쓴다. 봇 미설정이면 false.
+export async function notifyText(text) {
+  const c = readJson(path.join(DATA, 'tg_bot.json'), null);
+  if (!c?.token) return false;
+  await api(c, 'sendMessage', { chat_id: c.chat_id, text: text.slice(0, 4000) });
+  return true;
 }
 
 export async function handleUpdate(u, ctx) {
