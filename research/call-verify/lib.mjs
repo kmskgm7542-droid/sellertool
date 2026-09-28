@@ -103,8 +103,9 @@ function finishCall(seg, entryMode, entry, entryRange, name, rules, whole) {
     w = blank(w, s);
   } else flags.push('손절가 없음');
 
-  // 목표가
+  // 목표가 — "345원까지 매수유효" 같은 진입 상한은 목표가가 아니다
   const raw = [];
+  for (const m of [...w.matchAll(new RegExp(P + String.raw`\s*까지\s*(?:분할\s*)?매수`, 'g'))]) w = blank(w, m);
   for (const m of [...w.matchAll(TP_RANGE_RE)]) {
     const lo = toPrice(m[1], m[2] ?? m[4]);
     const hi = toPrice(m[3], m[4]);
