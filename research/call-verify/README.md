@@ -19,7 +19,18 @@ node run.mjs sim                         # 3) 시뮬레이션 → data/report.md
 node selftest.mjs                        # 규칙 자체 검증(가상 데이터, 28건)
 ```
 
-입력은 텔레그램 데스크톱의 "대화 내용 내보내기(JSON)" `result.json`, 또는 빈 줄로 구분하고 첫 줄에 `YYYY-MM-DD HH:MM`(KST)을 적은 텍스트 파일.
+입력은 텔레그램 데스크톱의 "대화 내용 내보내기(JSON)" `result.json`, 또는 빈 줄로 구분하고 첫 줄에 `YYYY-MM-DD HH:MM`(KST)을 적은 텍스트 파일. 채널이 여러 개면 메시지의 `channel` 필드로 구분되며 보고서에 채널별 집계가 따로 나온다.
+
+### 직접 수집 (`tg_collect.bat`, 대표 PC에서 실행)
+
+텔레그램 데스크톱 내보내기 대신, 본인 계정으로 로그인해 채널 글을 자동으로 내려받는다. 이 클라우드 환경은 텔레그램 서버에 접근할 수 없으므로 수집은 **PC에서** 하고, 결과 파일만 올린다(`navi-ev-trading/hub`의 "로컬이 수집, 클라우드가 분석" 방식).
+
+1. 1회 준비: https://my.telegram.org 로그인 → **API development tools** → 아무 앱 이름으로 생성 → `api_id`, `api_hash` 확인
+2. `tg_collect.bat` 더블클릭 → api_id/api_hash 입력(첫 회) → 전화번호·인증코드 입력(첫 회) → 채널 번호 선택(첫 회)
+3. 이후 실행은 로그인·채널 선택 없이 **새 글만 증분 수집** → `data/result.json` 갱신
+4. `data/result.json` 을 김이사에게 업로드 (또는 PC에서 `node run.mjs parse data/result.json`)
+
+`data/tg_session.session` 은 로그인 정보이므로 외부에 공유하지 않는다. 채널을 바꾸려면 `data/tg_config.json` 의 `channels` 를 지우고 다시 실행한다.
 
 시세: 코인은 업비트 1시간봉(`api.upbit.com`), 국내주식은 네이버 일봉(`fchart.stock.naver.com`). 이 클라우드 환경에서는 두 도메인이 네트워크 허용 목록에 있어야 한다.
 

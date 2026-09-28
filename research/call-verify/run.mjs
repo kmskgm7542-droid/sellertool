@@ -19,7 +19,7 @@ const DATA = path.join(HERE, 'data');
 const PRICES = path.join(DATA, 'prices');
 
 const COLS = [
-  'id', 't_post_kst', 't_post_unix', 'market', 'symbol', 'name', 'entry_mode', 'entry', 'sl',
+  'id', 'channel', 't_post_kst', 't_post_unix', 'market', 'symbol', 'name', 'entry_mode', 'entry', 'sl',
   'tp1', 'tp2', 'tp3', 'horizon_days', 'stop_basis', 'stop_hours', 'ok', 'flags', 'text',
 ];
 
@@ -66,6 +66,7 @@ function loadMessages(file) {
       .filter((m) => m.type === 'message')
       .map((m) => ({
         id: `tg${m.id}`,
+        channel: m.channel ?? j.name ?? '',
         t: Number(m.date_unixtime) || Date.parse(m.date) / 1000,
         text: Array.isArray(m.text) ? m.text.map((x) => (typeof x === 'string' ? x : x.text)).join('') : String(m.text ?? ''),
       }));
@@ -75,7 +76,7 @@ function loadMessages(file) {
     const lines = b.trim().split('\n');
     const m = lines[0].match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
     const t = m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) / 1000 - 9 * HOUR : NaN;
-    return { id: `tx${i + 1}`, t, text: (m ? lines.slice(1) : lines).join(' ') };
+    return { id: `tx${i + 1}`, channel: '', t, text: (m ? lines.slice(1) : lines).join(' ') };
   });
 }
 
@@ -99,7 +100,7 @@ async function cmdParse(file) {
     else flags.push('시장·종목코드 입력 필요');
     if (!Number.isFinite(m.t)) flags.push('게시 시각 없음');
     return {
-      id: m.id, t_post_kst: Number.isFinite(m.t) ? kst(m.t) : '', t_post_unix: Number.isFinite(m.t) ? m.t : '',
+      id: m.id, channel: m.channel, t_post_kst: Number.isFinite(m.t) ? kst(m.t) : '', t_post_unix: Number.isFinite(m.t) ? m.t : '',
       market, symbol, name: p.name ?? '', entry_mode: p.entryMode ?? '', entry: p.entry ?? '', sl: p.sl ?? '',
       tp1: p.tps[0]?.price ?? '', tp2: p.tps[1]?.price ?? '', tp3: p.tps[2]?.price ?? '',
       horizon_days: p.horizonDays, stop_basis: p.stopBasis, stop_hours: p.stopHours ?? '',
@@ -118,6 +119,7 @@ function loadLedger() {
   if (f !== 'ledger.csv') console.log('⚠ 검토본(data/ledger.csv)이 없어 초안을 사용합니다.');
   return readCsv(path.join(DATA, f)).map((r) => ({
     id: r.id,
+    channel: r.channel ?? '',
     tPost: Number(r.t_post_unix),
     market: r.market,
     symbol: r.symbol,
@@ -220,6 +222,11 @@ function cmdSim() {
     for (const m of ['UPBIT', 'KRX']) {
       const sub = res.filter((r) => r.market === m);
       if (sub.length) out.push(renderStats(`${title} · ${m === 'UPBIT' ? '코인(업비트)' : '국내주식'}`, stats(sub, CRITERIA)));
+    }
+    const chById = new Map(usable.map((c) => [c.id, c.channel]));
+    for (const ch of [...new Set(usable.map((c) => c.channel))].filter(Boolean)) {
+      const sub = res.filter((r) => chById.get(r.id) === ch);
+      if (sub.length) out.push(renderStats(`${title} · 채널: ${ch}`, stats(sub, CRITERIA)));
     }
     console.log(`\n${title}\n  체결 ${s.filled}/${s.calls} · 승률 ${pct(s.winRate)} · 평균 ${fx(s.meanR)}R · t ${fx(s.t)} · PF ${fx(s.pf)} · MDD ${pct(s.mdd)} → ${s.verdict}`);
     if (!opts.breakevenAfterTp1) {
