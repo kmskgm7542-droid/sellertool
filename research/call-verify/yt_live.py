@@ -299,13 +299,18 @@ async def fetch_captions(page, tr, video_id):
     params_list = []
     try:
         data = await page.evaluate("() => (window.ytInitialData || (typeof ytInitialData !== 'undefined' ? ytInitialData : null))")
+        from urllib.parse import unquote
         for ep in walk(data or {}, "getTranscriptEndpoint"):
-            if isinstance(ep, dict) and ep.get("params") and ep["params"] not in params_list:
-                params_list.append(ep["params"])
+            if isinstance(ep, dict) and ep.get("params"):
+                # 페이지에는 URL 인코딩("%3D")된 채로 들어 있다 → 풀어서 보내야 400(Precondition) 이 안 난다
+                pv = unquote(ep["params"])
+                if pv not in params_list:
+                    params_list.append(pv)
         if not params_list:
             for m in re.finditer(r'"getTranscriptEndpoint":\{"params":"([^"]+)"', await page.content()):
-                if m.group(1) not in params_list:
-                    params_list.append(m.group(1))
+                pv = unquote(m.group(1))
+                if pv not in params_list:
+                    params_list.append(pv)
     except Exception as exc:
         reasons.append(f"params {type(exc).__name__}")
     params_list.append(transcript_params(video_id))
@@ -344,7 +349,7 @@ async def fetch_captions(page, tr, video_id):
             for _ in range(15):
                 await page.wait_for_timeout(1000)
                 for r in list(captured):
-                    if "get_transcript" in r.url:
+                    if "get_transcript" in r.url and r.ok:
                         try:
                             segs = parse_innertube_transcript(await r.json())
                             if segs:
