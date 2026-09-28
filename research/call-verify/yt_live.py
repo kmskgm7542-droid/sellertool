@@ -82,6 +82,86 @@ def parse_json3(j):
     return segs
 
 
+# ── 실시간 탭 영상 목록: (1) ytInitialData 의 videoRenderer / lockupViewModel(신형) (2) 화면 DOM (3) HTML 안의 videoId ──
+JS_LIST_DOM = r"""
+() => {
+  const out = [];
+  const seen = new Set();
+  for (const el of document.querySelectorAll('ytd-rich-item-renderer, ytd-grid-video-renderer, yt-lockup-view-model')) {
+    const a = el.querySelector('a[href*="watch?v="]');
+    const m = a && a.getAttribute('href').match(/[?&]v=([\w-]{11})/);
+    if (!m || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    const title = (el.querySelector('#video-title, h3, .yt-lockup-metadata-view-model__title')?.innerText || '').trim();
+    const meta = (el.querySelector('#metadata-line, .yt-content-metadata-view-model')?.innerText || '').replace(/\s+/g, ' ').trim();
+    out.push({ id: m[1], title, rel: meta });
+  }
+  return out;
+}
+"""
+
+
+async def list_streams(page):
+    videos, seen = [], set()
+
+    def add(vid, title, rel):
+        if vid and vid not in seen:
+            seen.add(vid)
+            videos.append({"id": vid, "title": title or "", "rel": rel or ""})
+
+    data = await page.evaluate("() => (window.ytInitialData || (typeof ytInitialData !== 'undefined' ? ytInitialData : null))")
+    if data:
+        for v in walk(data, "videoRenderer"):
+            add(v.get("videoId"), runs_text(v.get("title")), runs_text(v.get("publishedTimeText")))
+        for v in walk(data, "lockupViewModel"):
+            if "VIDEO" not in str(v.get("contentType", "VIDEO")):
+                continue
+            md = ((v.get("metadata") or {}).get("lockupMetadataViewModel") or {})
+            title = ((md.get("title") or {}).get("content")) or ""
+            parts = []
+            for row in walk(md, "metadataParts"):
+                for part in row if isinstance(row, list) else []:
+                    t = part.get("text") if isinstance(part, dict) else None
+                    if isinstance(t, dict) and t.get("content"):
+                        parts.append(t["content"])
+            rel = " ".join(parts)
+            add(v.get("contentId"), title, rel)
+    if not videos:
+        try:
+            for v in await page.evaluate(JS_LIST_DOM):
+                add(v["id"], v["title"], v["rel"])
+        except Exception:
+            pass
+    if not videos:
+        for m in re.finditer(r'"videoId":"([\w-]{11})"', await page.content()):
+            add(m.group(1), "", "")
+    return videos
+
+
+async def player_response(page):
+    pr = await page.evaluate("() => (window.ytInitialPlayerResponse || (typeof ytInitialPlayerResponse !== 'undefined' ? ytInitialPlayerResponse : null))")
+    if pr:
+        return pr
+    html = await page.content()
+    m = re.search(r"ytInitialPlayerResponse\s*=\s*(\{.*?\})\s*;\s*(?:var|</script>)", html, re.S)
+    if m:
+        try:
+            return json.loads(m.group(1))
+        except Exception:
+            pass
+    # 최소한 자막·시작 시각만이라도
+    ct = re.search(r'"captionTracks":(\[.*?\])', html)
+    st = re.search(r'"startTimestamp":"([^"]+)"', html)
+    if ct:
+        try:
+            return {"captions": {"playerCaptionsTracklistRenderer": {"captionTracks": json.loads(ct.group(1))}},
+                    "microformat": {"playerMicroformatRenderer": {"liveBroadcastDetails": {"startTimestamp": st.group(1) if st else "", "isLiveNow": '"isLiveNow":true' in html}}}}
+        except Exception:
+            pass
+    return None
+
+
+
 async def main():
     DATA.mkdir(exist_ok=True)
     VOD.mkdir(exist_ok=True)
@@ -101,18 +181,11 @@ async def main():
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.goto(base + "/streams", wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
-        data = await page.evaluate("() => window.ytInitialData || null")
-        if not data:
-            print("⚠ 실시간 탭을 읽지 못했습니다(로그인 풀림 또는 화면 구조 변경). 브라우저 화면을 캡처해 주세요.")
-            await ctx.close()
-            return
-        videos = []
-        for v in walk(data, "videoRenderer"):
-            vid = v.get("videoId")
-            if vid and vid not in [x["id"] for x in videos]:
-                videos.append({"id": vid, "title": runs_text(v.get("title")), "rel": runs_text(v.get("publishedTimeText"))})
+        videos = await list_streams(page)
         videos = videos[:MAX_VIDEOS]
         print(f"실시간 탭 최근 방송 {len(videos)}개")
+        if not videos:
+            print("⚠ 실시간 탭에서 영상을 못 읽었습니다(로그인 풀림 또는 화면 구조 변경). 브라우저 화면을 캡처해 주세요.")
 
         got = 0
         for v in videos:
@@ -124,7 +197,7 @@ async def main():
                 continue
             await page.goto(f"https://www.youtube.com/watch?v={v['id']}", wait_until="domcontentloaded")
             await page.wait_for_timeout(3500)
-            pr = await page.evaluate("() => window.ytInitialPlayerResponse || null")
+            pr = await player_response(page)
             if not pr:
                 print(f"  {v['id']} 플레이어 정보 없음 — 다음에 재시도")
                 state["videos"][v["id"]] = {"first_seen": first, "title": v["title"]}
