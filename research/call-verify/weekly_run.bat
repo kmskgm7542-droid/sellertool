@@ -25,6 +25,7 @@ python -u fetch_prices.py >> "%LOG%" 2>&1
 "%NODE%" run.mjs sim >> "%LOG%" 2>&1
 if exist data\site.json python -u publish.py >> "%LOG%" 2>&1
 python -u notify.py >> "%LOG%" 2>&1
+if exist data\drive.json python -u export_drive.py >> "%LOG%" 2>&1
 echo [%date% %time%] weekly_run 끝 >> "%LOG%"
 exit /b 0
 

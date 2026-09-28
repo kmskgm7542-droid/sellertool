@@ -56,6 +56,10 @@ yt_posts.py → tg_collect.py → run.mjs parse data/yt_result.json → run.mjs 
 - 자막·추출물은 `data/` 에만 두고 재배포하지 않는다. 채널 전체 영상을 내려받거나 기법을 재구성하는 용도로 쓰지 않는다(콜 숫자 검증만).
 - 지금 한 번 돌려보기: `live_vod.bat`.
 
+### 구글 드라이브 자동 검토 (`setup_drive.bat`, `export_drive.py`)
+
+김이사(클라우드)가 PC 파일을 직접 읽을 수 없으므로, 배치가 끝날 때 **검토용 파일만** 구글 드라이브 데스크톱의 `내 드라이브\call-verify-sync` 로 복사한다(자막·추출 결과·원장·성적표·로그). 토큰·세션·키 파일은 복사하지 않는다. 김이사는 Google Drive 연결로 이 폴더를 읽어 평일 22:12 자동 검토(추출 정확도·누락·오추출)를 남긴다.
+
 ### 성적표 웹페이지 (`/calls`, 비밀번호 보호)
 
 `run.mjs sim` 이 `data/results.json`(웹용 스냅샷, 콜 원문 없음)을 만들고, `publish.py` 가 셀러툴 앱의 `POST /api/calls/ingest` 로 올린다. 서버는 Vercel Blob **비공개** 블롭에 최신본과 주차별 요약을 저장하고, `/calls` 페이지는 비밀번호(쿠키 30일) 뒤에서 판정 카드·자산 곡선·주차 추이·콜 목록·보유중·채널별·검토 필요·규칙을 보여준다. 색인 금지(noindex).
