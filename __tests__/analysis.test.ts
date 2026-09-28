@@ -1,6 +1,8 @@
 import {
+  PLATFORM_FEE_RATES,
   calcCompetition,
   calcCostRatio,
+  calcFxScenarios,
   calcVerdict,
   calcMarketSize,
 } from '@/lib/analysis';
@@ -52,6 +54,62 @@ describe('calcCostRatio', () => {
     const expensiveInput: CostCalculatorInput = { ...input, costCNY: 30 };
     const result = calcCostRatio(expensiveInput);
     expect(result.grade).toBe('fail');
+  });
+
+  // 2026 수수료 개편 (EXEC_REVIEW_2026-07 §1-4)
+  it('스마트스토어 수수료 2.73%를 적용한다', () => {
+    expect(PLATFORM_FEE_RATES.smartstore).toBe(0.0273);
+    const result = calcCostRatio(input);
+    expect(result.platformFeeKRW).toBe(Math.round(20000 * 0.0273)); // 546
+  });
+
+  it('브랜드스토어 수수료 3.64%를 적용한다', () => {
+    const result = calcCostRatio({ ...input, platform: 'brandstore' });
+    expect(result.platformFeeKRW).toBe(Math.round(20000 * 0.0364)); // 728
+  });
+
+  it('쿠팡은 보수 기본 10.9%를 적용한다', () => {
+    const result = calcCostRatio({ ...input, platform: 'coupang' });
+    expect(result.platformFeeKRW).toBe(Math.round(20000 * 0.109)); // 2180
+  });
+
+  it('feeRateOverride로 카테고리별 수수료를 지정할 수 있다 (쿠팡 4%)', () => {
+    const result = calcCostRatio({ ...input, platform: 'coupang', feeRateOverride: 0.04 });
+    expect(result.platformFeeKRW).toBe(Math.round(20000 * 0.04)); // 800
+  });
+});
+
+describe('calcFxScenarios', () => {
+  const input: CostCalculatorInput = {
+    costCNY: 10,
+    sellPriceKRW: 20000,
+    platform: 'smartstore',
+    exchangeRate: 190,
+    shippingCostKRW: 3000,
+    customsDutyRate: 0.08,
+    inspectionFeeKRW: 500,
+  };
+
+  it('기본 3시나리오(−5%/기준/+5%)를 만든다', () => {
+    const rows = calcFxScenarios(input);
+    expect(rows.map((r) => r.exchangeRate)).toEqual([180.5, 190, 199.5]);
+  });
+
+  it('환율이 오르면(원가 상승) 마진이 내려간다', () => {
+    const rows = calcFxScenarios(input);
+    expect(rows[0].marginRate).toBeGreaterThan(rows[1].marginRate);
+    expect(rows[1].marginRate).toBeGreaterThan(rows[2].marginRate);
+  });
+
+  it('rates 지정 시 그대로 사용한다 (일본 역직구 850/900/950 대비)', () => {
+    const rows = calcFxScenarios(input, [850, 900, 950]);
+    expect(rows.map((r) => r.exchangeRate)).toEqual([850, 900, 950]);
+  });
+
+  it('목표 마진율 미달 구간은 ok=false', () => {
+    // 기준 환율에서 마진율 ≈ 69% → 목표 70%로 올리면 전 구간 미달
+    const rows = calcFxScenarios(input, undefined, 70);
+    expect(rows.some((r) => !r.ok)).toBe(true);
   });
 });
 

@@ -41,3 +41,11 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env.local
+
+# 콜 검증기 — 유료 콘텐츠 원문·시세·결과는 커밋 금지
+research/call-verify/data/
+__pycache__/
+*.pyc
+
+# 콜 검증 성적표 로컬 저장소
+.calls-store/
