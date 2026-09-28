@@ -38,7 +38,7 @@ def stage_files():
     STAGE.mkdir()
     out = []
     for src in collect():
-        name = f"{stamp}_vod_{src.name}" if src.parent.name == "live_vod" else f"{stamp}_{src.name}"
+        name = f"{stamp}_vod_{src.name}" if src.parent.name == "live_vod" else f"{stamp}_diag_{src.name}" if src.parent.name == "diag" else f"{stamp}_{src.name}"
         shutil.copy2(src, STAGE / name)
         out.append(STAGE / name)
     (STAGE / f"{stamp}__last_sync.txt").write_text(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "utf-8")

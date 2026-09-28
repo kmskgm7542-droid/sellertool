@@ -42,6 +42,9 @@ def collect():
     vod = DATA / "live_vod"
     if vod.is_dir():
         out += sorted(vod.glob("*.json"))
+    diag = DATA / "diag"
+    if diag.is_dir():  # 자막 수집 실패 시 화면 진단(HTML·캡처·후보 목록) — 김이사가 정확히 고치기 위한 자료
+        out += sorted(diag.glob("*"))[-6:]
     return out
 
 
