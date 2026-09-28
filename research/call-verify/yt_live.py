@@ -196,10 +196,26 @@ def transcript_params(video_id):
 
 # 화면에 열린 스크립트 패널의 줄들
 JS_TRANSCRIPT_DOM = r"""
-() => [...document.querySelectorAll('ytd-transcript-segment-renderer')].map(el => ({
-  ts: (el.querySelector('.segment-timestamp')?.innerText || '').trim(),
-  text: (el.querySelector('.segment-text, yt-formatted-string.segment-text')?.innerText || '').replace(/\s+/g, ' ').trim(),
-}))
+() => {
+  const segs = [...document.querySelectorAll('ytd-transcript-segment-renderer')].map(el => ({
+    ts: (el.querySelector('.segment-timestamp')?.innerText || '').trim(),
+    text: (el.querySelector('.segment-text, yt-formatted-string.segment-text')?.innerText || '').replace(/\s+/g, ' ').trim(),
+  })).filter(s => s.ts && s.text);
+  if (segs.length > 5) return segs;
+  // 대체: 스크립트 패널 영역의 텍스트를 줄 단위로 읽어 "시각 줄 → 문장 줄" 쌍으로 만든다
+  const panel = [...document.querySelectorAll('ytd-engagement-panel-section-list-renderer')]
+    .find(p => /transcript|스크립트/i.test(p.getAttribute('target-id') || '') || /스크립트/.test(p.innerText.slice(0, 200)));
+  if (!panel) return [];
+  const lines = panel.innerText.split('\n').map(l => l.trim()).filter(Boolean);
+  const out = [];
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i]) && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i + 1])) {
+      out.push({ ts: lines[i], text: lines[i + 1].replace(/\s+/g, ' ') });
+      i++;
+    }
+  }
+  return out;
+}
 """
 
 # 페이지 안에서 유튜브 내부 API(get_transcript)를 패널과 같은 방식으로 호출
@@ -238,15 +254,15 @@ JS_CLICK_TRANSCRIPT = r"""
 () => {
   const vis = (el) => el && el.offsetParent !== null;
   const txt = (el) => ((el.getAttribute('aria-label') || '') + ' ' + (el.innerText || '')).trim();
-  const isT = (el) => /스크립트|transcript|자막 텍스트/i.test(txt(el));
-  // 1) 설명란 펼치기
+  const all = [...document.querySelectorAll('button, yt-button-shape button, a')].filter(vis);
+  // 이미 열려 있으면('스크립트 닫기' 보임) 건드리지 않는다 — 누르면 닫힌다
+  if (all.some((el) => /스크립트 닫기|hide transcript/i.test(txt(el)))) return 'already-open';
   for (const sel of ['#description-inline-expander #expand', 'tp-yt-paper-button#expand', '#expand']) {
     const e = document.querySelector(sel);
     if (vis(e)) { e.click(); break; }
   }
-  // 2) 설명란의 스크립트 버튼
   const cands = [...document.querySelectorAll('ytd-video-description-transcript-section-renderer button, ytd-video-description-transcript-section-renderer yt-button-shape button, button, yt-button-shape button, a')]
-    .filter((el) => vis(el) && isT(el));
+    .filter((el) => vis(el) && /스크립트 표시|show transcript/i.test(txt(el)));
   if (cands.length) { cands[0].click(); return 'description-button'; }
   return '';
 }
@@ -271,11 +287,12 @@ JS_DIAG_BUTTONS = r"""
 DIAG = DATA / "diag"
 
 
-async def fetch_captions(page, tr, video_id):
+async def fetch_captions(page, tr, video_id, captured=None):
     """자막 구간과 방식을 돌려준다. 순서: timedtext → 내부 API(페이지 params) → 화면 패널(네트워크 응답 가로채기 + DOM). 전부 실패하면 진단 파일을 남긴다."""
     reasons = []
-    captured = []
-    page.on("response", lambda r: captured.append(r) if ("get_transcript" in r.url or "timedtext" in r.url) else None)
+    if captured is None:
+        captured = []
+        page.on("response", lambda r: captured.append(r) if ("get_transcript" in r.url or "timedtext" in r.url) else None)
 
     # A) 자막 주소 직접 요청
     base = (tr or {}).get("baseUrl") or ""
@@ -335,9 +352,18 @@ async def fetch_captions(page, tr, video_id):
         await page.wait_for_timeout(2000)
         await page.mouse.wheel(0, 300)
         await page.wait_for_timeout(800)
+        # 로드 시 이미 나간 요청(패널이 열린 채 이동)부터 확인
+        for r in list(captured):
+            if "get_transcript" in r.url and r.ok:
+                try:
+                    segs = parse_innertube_transcript(await r.json())
+                    if segs:
+                        return segs, "panel-response(preload)"
+                except Exception:
+                    pass
         how_clicked = await page.evaluate(JS_CLICK_TRANSCRIPT)
         if not how_clicked:
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(1500)
             how_clicked = await page.evaluate(JS_CLICK_TRANSCRIPT)
         if not how_clicked:
             more = page.locator('ytd-watch-metadata button[aria-label="추가 작업"], ytd-watch-metadata ytd-menu-renderer yt-button-shape button').last
@@ -404,8 +430,11 @@ async def main():
             print("⚠ 실시간 탭에서 영상을 못 읽었습니다(로그인 풀림 또는 화면 구조 변경). 브라우저 화면을 캡처해 주세요.")
 
         got = 0
+        captured = []
+        page.on("response", lambda r: captured.append(r) if ("get_transcript" in r.url or "timedtext" in r.url) else None)
         for v in videos:
           try:
+            captured.clear()
             st = state["videos"].get(v["id"], {})
             if st.get("done"):
                 continue
@@ -432,7 +461,7 @@ async def main():
                 print(f"  {v['title'][:40]} — 한국어 자막 아직 없음(생성 대기, {RETRY_DAYS}일 재시도)")
                 state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "no_captions": True}
                 continue
-            segs, how = await fetch_captions(page, tr, v['id'])
+            segs, how = await fetch_captions(page, tr, v['id'], captured)
             if not segs:
                 print(f"  {v['title'][:40]} — 자막 내용을 받지 못함({how}), 다음에 재시도")
                 state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "fetch_fail": how}
