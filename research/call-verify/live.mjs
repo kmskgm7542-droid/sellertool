@@ -31,9 +31,10 @@ function makeLookup() {
     if (/^\d{6}$/.test(name)) return ['KRX', name];
     if (upbit[name]) return ['UPBIT', upbit[name]];
     if (krx[name]) return ['KRX', krx[name]];
-    const up = Object.keys(upbit).filter((k) => k.startsWith(name) || name.startsWith(k));
+    // 직접 입력한 이름은 줄임말("엑시" → 엑시인피니티)만 허용. 반대 방향("테스트종목" → 테스)은 오인이라 쓰지 않는다.
+    const up = Object.keys(upbit).filter((k) => k.startsWith(name));
     if (up.length === 1) return ['UPBIT', upbit[up[0]]];
-    const kr = Object.keys(krx).filter((k) => k.startsWith(name) || name.startsWith(k));
+    const kr = Object.keys(krx).filter((k) => k.startsWith(name));
     if (kr.length === 1) return ['KRX', krx[kr[0]]];
     return null;
   };

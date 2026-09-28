@@ -100,15 +100,17 @@ async function cmdParse(file) {
     }
   }
   if (fs.existsSync(krxFile)) for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(krxFile, 'utf8')))) krx.set(k, v);
-  const lookup = (name) => {
+  // strict: 직접 입력한 이름(방송 기록)은 줄임말 방향만 허용("테스트종목" → 테스 같은 오인 방지)
+  const lookup = (name, strict = false) => {
     if (!name) return null;
     if (/^\d{6}$/.test(name)) return ['KRX', name];
     if (upbit.has(name)) return ['UPBIT', upbit.get(name)];
     if (krx.has(name)) return ['KRX', krx.get(name)];
     // 부분 일치(예: "엑시" → "엑시인피니티"): 유일할 때만
-    const up = [...upbit.keys()].filter((k) => k.startsWith(name) || name.startsWith(k));
+    const near = (k) => k.startsWith(name) || (!strict && name.startsWith(k));
+    const up = [...upbit.keys()].filter(near);
     if (up.length === 1) return ['UPBIT', upbit.get(up[0])];
-    const kr = [...krx.keys()].filter((k) => k.startsWith(name) || name.startsWith(k));
+    const kr = [...krx.keys()].filter(near);
     if (kr.length === 1) return ['KRX', krx.get(kr[0])];
     return null;
   };
@@ -135,7 +137,7 @@ async function cmdParse(file) {
     calls.forEach((p, i) => {
       if (m.name && calls.length === 1) { p.name = m.name; p.flags = p.flags.filter((f) => f !== '종목명 없음'); }
       const flags = [...p.flags];
-      const hit = lookup(p.name);
+      const hit = lookup(p.name, Boolean(m.name));
       const [market, symbol] = hit ?? ['', ''];
       if (!hit) flags.push('시장·종목코드 입력 필요');
       if (!Number.isFinite(m.t) || !m.t) flags.push('게시 시각 없음');
