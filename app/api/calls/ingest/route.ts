@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, week: body.week, weeks: history.length, filled: body.stats.A.filled });
   } catch (e) {
     if (e instanceof StoreNotConfigured) return NextResponse.json({ ok: false, error: e.message }, { status: 503 });
-    throw e;
+    // 저장소 오류(자격 증명·네트워크)는 원인을 그대로 돌려줘 PC 쪽 publish.py 가 보여주게 한다.
+    return NextResponse.json({ ok: false, error: `저장 실패: ${(e as Error).message ?? String(e)}` }, { status: 500 });
   }
 }
