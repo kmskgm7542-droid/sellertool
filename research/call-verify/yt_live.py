@@ -189,30 +189,89 @@ def hms(ts):
 
 
 async def transcript_panel(page):
-    """재생 페이지의 '스크립트 표시' 패널에서 자막을 읽는다(타임텍스트 요청이 막혔을 때)."""
-    try:
-        exp = page.locator("#description #expand, tp-yt-paper-button#expand, #expand").first
-        if await exp.count():
-            await exp.click(timeout=5000)
-            await page.wait_for_timeout(800)
-    except Exception:
-        pass
-    btn = page.get_by_role("button", name=re.compile("스크립트|Transcript|자막 텍스트")).first
-    if await btn.count() == 0:
-        btn = page.locator("ytd-video-description-transcript-section-renderer button").first
-    if await btn.count() == 0:
+    """재생 페이지의 '스크립트 표시' 패널에서 자막을 읽는다(타임텍스트·innertube 가 막혔을 때)."""
+    await page.wait_for_timeout(2500)
+    for sel in ("#description-inline-expander #expand", "tp-yt-paper-button#expand", "#expand"):
+        try:
+            exp = page.locator(sel).first
+            if await exp.count() and await exp.is_visible():
+                await exp.click(timeout=5000)
+                await page.wait_for_timeout(1000)
+                break
+        except Exception:
+            continue
+    btn = None
+    for sel in ("ytd-video-description-transcript-section-renderer button", 'button[aria-label*="스크립트"]', 'button[aria-label*="transcript" i]'):
+        loc = page.locator(sel).first
+        if await loc.count():
+            btn = loc
+            break
+    if btn is None:
+        cand = page.get_by_role("button", name=re.compile("스크립트|Transcript"))
+        if await cand.count():
+            btn = cand.first
+    if btn is None:
         return []
     await btn.click(timeout=8000)
     for _ in range(20):
         await page.wait_for_timeout(1000)
         rows = await page.evaluate(JS_TRANSCRIPT)
         if len(rows) > 5:
-            segs = [{"t": float(hms(r["ts"])), "d": 0.0, "text": r["text"]} for r in rows if r["text"]]
-            return segs
+            return [{"t": float(hms(r["ts"])), "d": 0.0, "text": r["text"]} for r in rows if r["text"]]
     return []
 
 
-async def fetch_captions(page, tr):
+JS_INNERTUBE_TRANSCRIPT = r"""
+async ({ params }) => {
+  const get = (k) => (window.ytcfg && ytcfg.get) ? ytcfg.get(k) : null;
+  const key = get('INNERTUBE_API_KEY');
+  const ctx = get('INNERTUBE_CONTEXT');
+  if (!key || !ctx) return { error: 'ytcfg 없음' };
+  const headers = {
+    'Content-Type': 'application/json',
+    'X-Youtube-Client-Name': String(get('INNERTUBE_CONTEXT_CLIENT_NAME') || 1),
+    'X-Youtube-Client-Version': get('INNERTUBE_CLIENT_VERSION') || '',
+    'X-Origin': 'https://www.youtube.com',
+  };
+  const m = document.cookie.match(/(?:^|;\s*)(?:SAPISID|__Secure-3PAPISID)=([^;]+)/);
+  if (m) {
+    const ts = Math.floor(Date.now() / 1000);
+    const buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(`${ts} ${m[1]} https://www.youtube.com`));
+    const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    headers['Authorization'] = `SAPISIDHASH ${ts}_${hex}`;
+  }
+  const r = await fetch(`/youtubei/v1/get_transcript?key=${key}&prettyPrint=false`, {
+    method: 'POST', credentials: 'include', headers, body: JSON.stringify({ context: ctx, params }),
+  });
+  try { return await r.json(); } catch (e) { return { error: `status ${r.status}` }; }
+}
+"""
+
+
+def transcript_params(video_id):
+    import base64
+    return base64.b64encode(b"\n\x0b" + video_id.encode()).decode()
+
+
+def parse_innertube_transcript(j):
+    segs = []
+    for r in walk(j, "transcriptSegmentRenderer"):
+        text = "".join(x.get("text", "") for x in (r.get("snippet") or {}).get("runs", [])).replace("\n", " ").strip()
+        if text and "startMs" in r:
+            segs.append({"t": round(int(r["startMs"]) / 1000, 1), "d": round((int(r.get("endMs", r["startMs"])) - int(r["startMs"])) / 1000, 1), "text": text})
+    return segs
+
+
+async def innertube_transcript(page, video_id):
+    j = await page.evaluate(JS_INNERTUBE_TRANSCRIPT, {"params": transcript_params(video_id)})
+    if not isinstance(j, dict) or j.get("error"):
+        return [], f"innertube {j.get('error') if isinstance(j, dict) else '?'}"
+    segs = parse_innertube_transcript(j)
+    return segs, ("innertube" if segs else "innertube 빈 결과")
+
+
+
+async def fetch_captions(page, tr, video_id=None):
     """자막 구간 목록과 방식 이름을 돌려준다. 실패하면 ([], 이유)."""
     base = tr.get("baseUrl") or ""
     if base:
@@ -233,12 +292,21 @@ async def fetch_captions(page, tr):
             reason = f"timedtext {type(exc).__name__}"
     else:
         reason = "baseUrl 없음"
+    if video_id:
+        try:
+            segs, how = await innertube_transcript(page, video_id)
+            if segs:
+                return segs, how
+            reason += f" / {how}"
+        except Exception as exc:
+            reason += f" / innertube {type(exc).__name__}"
     try:
         segs = await transcript_panel(page)
         if segs:
             return segs, "panel"
+        reason += " / panel 못 찾음"
     except Exception as exc:
-        reason += f" / panel {type(exc).__name__}"
+        reason += f" / panel {type(exc).__name__}: {str(exc)[:60]}"
     return [], reason
 
 
@@ -297,7 +365,7 @@ async def main():
                 print(f"  {v['title'][:40]} — 한국어 자막 아직 없음(생성 대기, {RETRY_DAYS}일 재시도)")
                 state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "no_captions": True}
                 continue
-            segs, how = await fetch_captions(page, tr)
+            segs, how = await fetch_captions(page, tr, v['id'])
             if not segs:
                 print(f"  {v['title'][:40]} — 자막 내용을 받지 못함({how}), 다음에 재시도")
                 state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "fetch_fail": how}
