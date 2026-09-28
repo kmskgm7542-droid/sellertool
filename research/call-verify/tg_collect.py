@@ -67,13 +67,27 @@ async def main():
     DATA.mkdir(exist_ok=True)
     cfg = load(CFG, {})
     if not cfg.get("api_id") or not cfg.get("api_hash"):
-        print("my.telegram.org 에서 발급한 값을 입력하세요 (한 번만 묻습니다).")
-        cfg["api_id"] = int(ask("api_id: "))
-        cfg["api_hash"] = ask("api_hash: ")
+        print("my.telegram.org 에서 발급한 값을 입력하세요 (한 번만 묻습니다). 붙여넣기는 마우스 오른쪽 클릭.")
+        while True:
+            v = ask("api_id (숫자): ")
+            if v.isdigit():
+                cfg["api_id"] = int(v)
+                break
+            print("  숫자만 입력하세요.")
+        while True:
+            v = ask("api_hash (영문+숫자 32자): ")
+            if len(v) == 32:
+                cfg["api_hash"] = v
+                break
+            print(f"  길이가 {len(v)}자입니다. 32자를 정확히 붙여넣으세요.")
         save(CFG, cfg)
 
     client = TelegramClient(str(DATA / "tg_session"), cfg["api_id"], cfg["api_hash"])
-    await client.start()  # 첫 실행 시 전화번호·인증코드(·2단계 비밀번호) 입력
+    await client.start(  # 첫 실행 시 전화번호·인증코드(·2단계 비밀번호) 입력
+        phone=lambda: ask("텔레그램 전화번호 (예: +821012345678): "),
+        code_callback=lambda: ask("텔레그램 앱으로 온 인증코드: "),
+        password=lambda: ask("2단계 인증 비밀번호 (설정한 경우만): "),
+    )
     me = await client.get_me()
     print(f"로그인: {me.first_name or ''} ({me.phone})")
 
