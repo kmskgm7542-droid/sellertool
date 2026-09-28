@@ -8,7 +8,7 @@ echo.
 
 where node >nul 2>&1
 if errorlevel 1 if not exist "%ProgramFiles%\nodejs\node.exe" (
-  echo [준비] Node.js 를 설치합니다 (1~2분)...
+  echo [준비] Node.js 를 설치합니다. 1~2분 걸립니다...
   winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
   if errorlevel 1 (
     echo winget 설치가 안 되면 https://nodejs.org 에서 LTS 를 직접 설치한 뒤 이 파일을 다시 실행하세요.
@@ -31,7 +31,7 @@ if errorlevel 1 (
 )
 echo 등록 완료. 해제: schtasks /delete /tn CallVerifyWeekly /f
 echo.
-echo 지금 바로 한 번 시험 실행합니다 (2~5분). 끝나면 텔레그램으로 성적표가 옵니다...
+echo 지금 바로 한 번 시험 실행합니다. 2~5분 뒤 텔레그램으로 성적표가 옵니다...
 call "%RUN%"
 echo 시험 실행 끝. 텔레그램을 확인하세요. 안 왔으면 data\weekly.log 를 올려주세요.
 :end
