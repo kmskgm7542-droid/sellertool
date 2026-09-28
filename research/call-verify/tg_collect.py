@@ -15,14 +15,19 @@ import json
 import sys
 from pathlib import Path
 
+
+HERE = Path(__file__).resolve().parent
+DATA = HERE / "data"
+sys.path.insert(0, str(HERE))
+from runlog import start as _start_log  # noqa: E402
+
+_start_log("tg", DATA)
 try:
     from telethon import TelegramClient
 except ImportError:
     print("telethon 이 없습니다. tg_collect.bat 으로 실행하거나: python -m pip install telethon")
     sys.exit(1)
 
-HERE = Path(__file__).resolve().parent
-DATA = HERE / "data"
 CFG = DATA / "tg_config.json"
 STATE = DATA / "tg_state.json"
 OUT = DATA / "result.json"

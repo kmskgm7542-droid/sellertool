@@ -19,14 +19,19 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+
+HERE = Path(__file__).resolve().parent
+DATA = HERE / "data"
+sys.path.insert(0, str(HERE))
+from runlog import start as _start_log  # noqa: E402
+
+_start_log("yt", DATA)
 try:
     from playwright.async_api import async_playwright
 except ImportError:
     print("playwright 가 없습니다. yt_posts.bat 으로 실행하세요.")
     sys.exit(1)
 
-HERE = Path(__file__).resolve().parent
-DATA = HERE / "data"
 CFG = DATA / "yt_config.json"
 OUT = DATA / "yt_result.json"
 PROFILE = DATA / "yt_profile"
