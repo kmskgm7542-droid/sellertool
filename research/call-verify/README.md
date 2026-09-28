@@ -9,14 +9,34 @@
 - 콜의 재배포, 상품화, 외부 공개는 하지 않는다.
 - ⛔ 검증 합격 전 실거래 금지.
 
-## 흐름
+## 주간 자동 루틴 (대표 PC, 1회 설정 후 무인)
 
 ```
-node run.mjs parse data/result.json      # 1) 텔레그램 내보내기 → data/ledger.draft.csv
-#   사람이 초안을 검토해 data/ledger.csv 로 저장 (flags 열 확인, market/symbol 채우기, ok=1)
-NODE_USE_ENV_PROXY=1 node run.mjs fetch  # 2) 시세 수집 → data/prices/
-node run.mjs sim                         # 3) 시뮬레이션 → data/report.md, data/results.csv
-node selftest.mjs                        # 규칙 자체 검증(가상 데이터, 28건)
+schedule_weekly.bat   # 1회 더블클릭: Node 설치(없으면) → 봇 토큰 입력 → 매주 일요일 22:00 작업 등록 → 시험 실행
+```
+
+이후 매주 일요일 밤 `weekly_run.bat` 이 자동으로 아래를 순서대로 돌리고, 결과를 **텔레그램 봇으로 대표에게** 보낸다(본문 = `data/summary.txt`, 첨부 = `data/report.md`). 업로드나 수동 작업은 없다.
+
+```
+yt_posts.py → tg_collect.py → run.mjs parse data/yt_result.json → run.mjs merge
+  → fetch_prices.py → run.mjs sim → notify.py          (로그: data/weekly.log)
+```
+
+- `merge` 는 기존 `data/ledger.csv` 행을 그대로 두고 **새 콜만** 추가한다(같은 종목·같은 손절가·±2일은 중복으로 봄). 가격이 불완전한 콜은 `data/pending_review.txt` 에 남기고 원장에는 넣지 않는다.
+- 유튜브 게시글 시각은 같은 날의 사생팬 알림(텔레그램) 시각으로 바꿔 넣는다(`precision=alert`). 하루 어긋날 수 있어 `시각=사생팬 알림` 표시를 남긴다.
+- 매일 21:30 `CallVerifyDaily`(`schedule_daily.bat`)는 그대로 둔다. 매일 수집해야 유튜브 게시글이 **하루 이내 정밀도**로 쌓인다. 일요일에는 두 작업이 30분 간격으로 돌지만 수집은 증분이라 문제 없다.
+- 봇: `navi-ev-trading` 에서 쓰던 BotFather 봇 토큰을 그대로 쓴다. 토큰은 `data/tg_bot.json`(gitignore) 에만 저장한다. 봇은 먼저 말을 걸 수 없으므로 대표가 그 봇에게 한 번은 메시지를 보낸 상태여야 한다. 재설정은 `setup_bot.bat`.
+- 해제: `schtasks /delete /tn CallVerifyWeekly /f`
+
+## 수동 흐름 (클라우드 또는 PC 개별 실행)
+
+```
+node run.mjs parse data/result.json      # 1) 텔레그램/유튜브 수집물 → data/ledger.draft.csv
+node run.mjs merge                       #    초안을 data/ledger.csv 에 병합(새 콜만)
+#   사람이 flags 열을 검토 (market/symbol 확인, ok=1)
+python fetch_prices.py                   # 2) 시세 수집 → data/prices/ (+ prices.zip). 클라우드에서는 node run.mjs fetch
+node run.mjs sim                         # 3) 시뮬레이션 → data/report.md, data/results.csv, data/summary.txt
+node selftest.mjs                        # 규칙 자체 검증(가상 데이터, 29건)
 ```
 
 입력은 텔레그램 데스크톱의 "대화 내용 내보내기(JSON)" `result.json`, 또는 빈 줄로 구분하고 첫 줄에 `YYYY-MM-DD HH:MM`(KST)을 적은 텍스트 파일. 채널이 여러 개면 메시지의 `channel` 필드로 구분되며 보고서에 채널별 집계가 따로 나온다.
@@ -76,3 +96,7 @@ A안은 처음 제시된 목표가·손절가를 그대로 적용한다. B안(�
 ## 변경 기록
 
 - 최초 작성. 규칙 확정.
+- 일봉 데이터 특례 추가(`MARKET_CLOSE`, `SL_SAMEDAY`). 이유: 국내주식은 일봉만 확보 가능해 "현재가 매수" 콜이 전부 미체결/제외되던 문제. 결과를 보기 전 9월 원장 기준으로 확정.
+- 주간 자동 루틴 추가(`schedule_weekly.bat`, `weekly_run.bat`, `notify.py`, `setup_bot.py`). 규칙 변경 없음.
+- 원장 병합 중복 판정을 ±2일로 완화(같은 콜이 유튜브·텔레그램에 하루 차이로 잡히던 문제). 규칙 변경 없음.
+- 공개 채널(생존투자 정보알림채널) 사진 1,074장 점검: 표본 24장 전부 차트·썸네일이라 과거 콜 날짜 복원에 쓸 수 없음. 전향적 수집만 유효.

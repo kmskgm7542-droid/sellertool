@@ -110,8 +110,25 @@ async function cmdParse(file) {
     if (kr.length === 1) return ['KRX', krx.get(kr[0])];
     return null;
   };
+  // 사생팬알림방 사진 알림 시각(정확) → 같은 날(KST) 유튜브 글의 시각으로 대입
+  const alertsByDay = new Map();
+  const tgFile = path.join(DATA, 'result.json');
+  if (fs.existsSync(tgFile)) {
+    try {
+      for (const a of JSON.parse(fs.readFileSync(tgFile, 'utf8')).messages || []) {
+        if (!/사생팬/.test(a.channel || '')) continue;
+        const t = Number(a.date_unixtime);
+        const day = kst(t).slice(0, 10);
+        alertsByDay.set(day, Math.min(alertsByDay.get(day) ?? Infinity, t));
+      }
+    } catch { /* 알림 파일이 깨져도 파싱은 계속 */ }
+  }
   const rows = [];
   for (const m of msgs) {
+    if (m.id.startsWith('yt') && ['day', 'hour'].includes(m.precision) && Number.isFinite(m.t)) {
+      const t = alertsByDay.get(kst(m.t).slice(0, 10));
+      if (t) { m.t = t; m.precision = 'alert'; }
+    }
     const calls = parseCalls(m.text, RULES);
     calls.forEach((p, i) => {
       const flags = [...p.flags];
@@ -120,6 +137,8 @@ async function cmdParse(file) {
       if (!hit) flags.push('시장·종목코드 입력 필요');
       if (!Number.isFinite(m.t) || !m.t) flags.push('게시 시각 없음');
       if (['week', 'month', 'year', 'unknown'].includes(m.precision)) flags.push(`게시 시각 부정확(${m.precision})`);
+      if (m.precision === 'alert') flags.push('시각=사생팬 알림');
+      else if (m.precision === 'day') flags.push('시각=일 단위(12:00 가정)');
       rows.push({
         id: calls.length > 1 ? `${m.id}-${i + 1}` : m.id, channel: m.channel,
         t_post_kst: Number.isFinite(m.t) ? kst(m.t) : '', t_post_unix: Number.isFinite(m.t) ? m.t : '',
@@ -138,11 +157,40 @@ async function cmdParse(file) {
   console.log(`자동 확정 ${okN}건, 검토 필요 ${rows.length - okN}건. 검토 후 data/ledger.csv 로 저장하세요.`);
 }
 
+// 초안(자동 파싱)을 장부에 합친다: 기존 행은 그대로(사람이 고친 값 보존), 새 행만 추가.
+// 시각이 부정확한(주/월/년) 새 행은 넣지 않는다 — 검증에 못 쓰고 목록만 길어진다.
+function cmdMerge() {
+  const draftFile = path.join(DATA, 'ledger.draft.csv');
+  const ledgerFile = path.join(DATA, 'ledger.csv');
+  if (!fs.existsSync(draftFile)) { console.log('초안이 없습니다. 먼저 parse 를 실행하세요.'); return; }
+  const draft = readCsv(draftFile);
+  const ledger = fs.existsSync(ledgerFile) ? readCsv(ledgerFile) : [];
+  const known = new Set(ledger.map((r) => r.id));
+  // 사람이 사진을 보고 적은 행과 같은 콜(같은 종목·같은 손절가·이틀 이내)은 중복으로 본다
+  const day = (r) => Math.floor(Number(r.t_post_unix || 0) / DAY);
+  const isDup = (r) => ledger.some((k) => (k.symbol || k.name) === (r.symbol || r.name) && k.sl === r.sl && Math.abs(day(k) - day(r)) <= 2);
+  const added = [];
+  for (const r of draft) {
+    if (known.has(r.id) || isDup(r) || /부정확/.test(r.flags)) continue;
+    ledger.push(r);
+    added.push(r);
+  }
+  writeCsv(ledgerFile, COLS, ledger);
+  const pending = ledger.filter((r) => r.ok !== '1' && !/부정확/.test(r.flags));
+  fs.writeFileSync(
+    path.join(DATA, 'pending_review.txt'),
+    pending.map((r) => `${r.id} | ${r.t_post_kst} | ${r.name || '(종목?)'} | ${r.flags}`).join('\n'),
+  );
+  console.log(`장부 ${ledger.length}행 (신규 ${added.length}: 자동확정 ${added.filter((r) => r.ok === '1').length}, 검토필요 ${added.filter((r) => r.ok !== '1').length}) → ${ledgerFile}`);
+}
+
 function loadLedger() {
   const f = fs.existsSync(path.join(DATA, 'ledger.csv')) ? 'ledger.csv' : 'ledger.draft.csv';
   if (f !== 'ledger.csv') console.log('⚠ 검토본(data/ledger.csv)이 없어 초안을 사용합니다.');
   return readCsv(path.join(DATA, f)).map((r) => ({
     id: r.id,
+    name: r.name ?? '',
+    tPostKst: r.t_post_kst ?? '',
     channel: r.channel ?? '',
     tPost: Number(r.t_post_unix),
     market: r.market,
@@ -265,11 +313,42 @@ function cmdSim() {
   }
   fs.writeFileSync(path.join(DATA, 'report.md'), out.join('\n'));
   writeCsv(path.join(DATA, 'results.csv'), ['id', 'market', 'status', 'mode', 'fill', 'R', 'net', 'reason', 'hold_days'], perCall);
+  fs.writeFileSync(path.join(DATA, 'summary.txt'), renderSummary(usable, perCall, excluded));
   console.log(`\n보고서: ${path.join(DATA, 'report.md')}`);
+}
+
+// 텔레그램으로 보낼 짧은 성적표 (A안 기준)
+function renderSummary(usable, perCall, excluded) {
+  const byId = new Map(usable.map((c) => [c.id, c]));
+  const filled = perCall.filter((r) => r.status === 'FILLED');
+  const s = stats(
+    filled.map((r, i) => ({ status: 'FILLED', R: Number(r.R), tFill: i, tExit: i + 0.5, holdDays: Number(r.hold_days) || 0, lastReason: r.reason, incomplete: false })),
+    CRITERIA,
+  );
+  const label = (r) => {
+    if (r.status !== 'FILLED') return r.status === 'UNFILLED' ? '미체결' : r.status === 'SKIPPED' ? '제외' : '시세없음';
+    if (r.reason === 'DATA_END') return `보유중 ${Number(r.R) >= 0 ? '+' : ''}${Number(r.R).toFixed(1)}R`;
+    if (/^SL/.test(r.reason)) return `손절 ${Number(r.R).toFixed(1)}R`;
+    if (/^TP/.test(r.reason)) return `목표 +${Number(r.R).toFixed(1)}R`;
+    return `만료 ${Number(r.R) >= 0 ? '+' : ''}${Number(r.R).toFixed(1)}R`;
+  };
+  const lines = [
+    `📊 콜 검증 주간 성적표 (${kst(Date.now() / 1000)} KST)`,
+    `대상 ${usable.length}건 · 체결 ${filled.length} · 승률 ${pct(s.winRate)} · 평균 ${fx(s.meanR)}R · PF ${fx(s.pf)} · MDD ${pct(s.mdd)}`,
+    `판정: ${s.verdict}${s.requiredN ? ` (t≥2까지 필요 표본 ${s.requiredN})` : ''}`,
+    '',
+    ...perCall.map((r) => `· ${(byId.get(r.id)?.tPostKst || '').slice(5, 10)} ${byId.get(r.id)?.name || r.id}: ${label(r)}`),
+  ];
+  let pending = '';
+  try { pending = fs.readFileSync(path.join(DATA, 'pending_review.txt'), 'utf8').trim(); } catch { /* 없음 */ }
+  if (pending) lines.push('', `⚠ 검토 필요 ${pending.split('\n').length}건 (목표가·종목 등 미확정):`, ...pending.split('\n').slice(0, 8).map((l) => '  ' + l.split(' | ').slice(1, 3).join(' ')));
+  if (excluded) lines.push('', `(정보 부족으로 제외 ${excluded}건 · ⛔ 워크포워드 합격 전 실거래 금지)`);
+  return lines.join('\n');
 }
 
 const [cmd, arg] = process.argv.slice(2);
 if (cmd === 'parse' && arg) await cmdParse(arg);
+else if (cmd === 'merge') cmdMerge();
 else if (cmd === 'fetch') await cmdFetch();
 else if (cmd === 'sim') cmdSim();
-else console.log('사용법: node run.mjs parse <파일> | fetch | sim');
+else console.log('사용법: node run.mjs parse <파일> | merge | fetch | sim');

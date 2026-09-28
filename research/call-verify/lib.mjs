@@ -87,7 +87,8 @@ const TP_WORD_RE = new RegExp(P + String.raw`\s*(?:정도|대)?\s*(?:익절|목�
 const TP_LEAD_RE = new RegExp(String.raw`(?:목표가?|익절가?|익절은|목표는)\s*(?:은|는|가|:)?\s*` + P, 'g');
 const TP_UNIT_RE = new RegExp(NUM + String.raw`\s*(?:(만|천)\s*원?|원)` + NOT_PRICE, 'g');
 
-const strip = (s) => s.replace(/(을|를|은|는|이|가|도|만|의|에|로)$/, '');
+// 조사 떼기 — 두 글자 종목명("온도", "지토")이 잘리지 않도록 세 글자 이상일 때만
+const strip = (s) => (s.length >= 3 ? s.replace(/(을|를|은|는|이|가|도|만|의|에|로)$/, '') : s);
 
 function finishCall(seg, entryMode, entry, entryRange, name, rules, whole) {
   const flags = [];
