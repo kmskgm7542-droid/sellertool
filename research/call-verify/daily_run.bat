@@ -13,7 +13,7 @@ if exist data\anthropic.json (
   if defined NODE "%NODE%" extract_rules.mjs >> data\daily.log 2>&1
 )
 if defined NODE "%NODE%" live.mjs --once >> data\daily.log 2>&1
-if exist data\drive.json python -u export_drive.py >> data\daily.log 2>&1
+python -u export_drive.py >> data\daily.log 2>&1
 echo [%date% %time%] daily_run 끝 >> data\daily.log
 exit /b 0
 

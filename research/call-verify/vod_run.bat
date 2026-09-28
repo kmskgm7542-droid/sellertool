@@ -11,7 +11,7 @@ if exist data\anthropic.json (
 ) else (
   if defined NODE "%NODE%" extract_rules.mjs >> "%LOG%" 2>&1
 )
-if exist data\drive.json python -u export_drive.py >> "%LOG%" 2>&1
+python -u export_drive.py >> "%LOG%" 2>&1
 echo [%date% %time%] vod_run 끝 >> "%LOG%"
 exit /b 0
 

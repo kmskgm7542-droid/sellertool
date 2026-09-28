@@ -16,7 +16,7 @@ if exist data\anthropic.json (
   if defined NODE "%NODE%" extract_rules.mjs
   if not defined NODE echo Node.js 가 없습니다. schedule_weekly.bat 을 먼저 실행하세요.
 )
-if exist data\drive.json python -u export_drive.py
+python -u export_drive.py
 echo.
 echo 끝났습니다.
 exit /b 0

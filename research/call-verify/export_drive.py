@@ -36,11 +36,22 @@ def target_dir():
     return root / "call-verify-sync" if root else None
 
 
+def collect():
+    """복사 대상 파일 목록 (data/ 안의 검토용 파일만)."""
+    out = [DATA / n for n in FILES if (DATA / n).exists()]
+    vod = DATA / "live_vod"
+    if vod.is_dir():
+        out += sorted(vod.glob("*.json"))
+    return out
+
+
 def main():
     dst = target_dir()
     if not dst:
-        print("구글 드라이브 폴더를 찾지 못했습니다. setup_drive.bat 을 실행하세요.")
-        sys.exit(1)
+        # 드라이브 데스크톱 폴더가 없으면 브라우저(유튜브 로그인 프로필)로 드라이브 웹에 직접 올린다
+        import subprocess
+        print("구글 드라이브 데스크톱 폴더가 없어 브라우저 업로드로 대신합니다.")
+        sys.exit(subprocess.run([sys.executable, str(HERE / "drive_upload.py")]).returncode)
     dst.mkdir(parents=True, exist_ok=True)
     (dst / "live_vod").mkdir(exist_ok=True)
     n = 0
