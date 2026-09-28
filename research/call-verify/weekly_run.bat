@@ -16,6 +16,11 @@ python -u yt_posts.py >> "%LOG%" 2>&1
 python -u tg_collect.py >> "%LOG%" 2>&1
 "%NODE%" run.mjs parse data\yt_result.json >> "%LOG%" 2>&1
 "%NODE%" run.mjs merge >> "%LOG%" 2>&1
+"%NODE%" live.mjs --once >> "%LOG%" 2>&1
+if exist data\live_calls.json (
+  "%NODE%" run.mjs parse data\live_calls.json >> "%LOG%" 2>&1
+  "%NODE%" run.mjs merge >> "%LOG%" 2>&1
+)
 python -u fetch_prices.py >> "%LOG%" 2>&1
 "%NODE%" run.mjs sim >> "%LOG%" 2>&1
 if exist data\site.json python -u publish.py >> "%LOG%" 2>&1

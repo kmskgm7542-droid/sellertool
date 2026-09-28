@@ -15,6 +15,8 @@ export const RULES = {
   defaultDays: 14, // 기간 표기가 전혀 없을 때
   // 종가 손절 발동 시 청산 가격: 'nextOpen'(다음 봉 시가) | 'close'(해당 봉 종가)
   closeStopExit: 'nextOpen',
+  // 일봉(국내주식): 게시 시각이 그날 KST 이 시각(15:20) 이후면 그날 체결 불가 → 다음 거래일 시가부터. (봉 시작 = KST 00:00 기준 경과 시간)
+  dailyFillCutoffHours: 15 + 20 / 60,
 };
 
 // 편도 비용(비율). 슬리피지는 소형 종목 기준의 보수적 가정.

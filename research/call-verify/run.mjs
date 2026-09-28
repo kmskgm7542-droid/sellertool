@@ -68,6 +68,8 @@ function loadMessages(file) {
         id: m.post_id ? `yt${m.id}` : `tg${m.id}`,
         channel: m.channel ?? j.name ?? '',
         precision: m.date_precision ?? '',
+        name: m.name ?? null, // 방송 직접 기록(live.mjs)은 종목명을 첫 단어로 확정해 보낸다
+
         t: Number(m.date_unixtime) || Date.parse(m.date) / 1000,
         text: Array.isArray(m.text) ? m.text.map((x) => (typeof x === 'string' ? x : x.text)).join('') : String(m.text ?? ''),
       }));
@@ -131,6 +133,7 @@ async function cmdParse(file) {
     }
     const calls = parseCalls(m.text, RULES);
     calls.forEach((p, i) => {
+      if (m.name && calls.length === 1) { p.name = m.name; p.flags = p.flags.filter((f) => f !== '종목명 없음'); }
       const flags = [...p.flags];
       const hit = lookup(p.name);
       const [market, symbol] = hit ?? ['', ''];
