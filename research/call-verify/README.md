@@ -24,7 +24,7 @@ yt_posts.py → tg_collect.py → run.mjs parse data/yt_result.json → run.mjs 
 
 - `merge` 는 기존 `data/ledger.csv` 행을 그대로 두고 **새 콜만** 추가한다(같은 종목·같은 손절가·±2일은 중복으로 봄). 가격이 불완전한 콜은 `data/pending_review.txt` 에 남기고 원장에는 넣지 않는다.
 - 유튜브 게시글 시각은 같은 날의 사생팬 알림(텔레그램) 시각으로 바꿔 넣는다(`precision=alert`). 하루 어긋날 수 있어 `시각=사생팬 알림` 표시를 남긴다.
-- 매일 21:30 `CallVerifyDaily`(`schedule_daily.bat`)는 그대로 둔다. 매일 수집해야 유튜브 게시글이 **하루 이내 정밀도**로 쌓인다. 일요일에는 두 작업이 30분 간격으로 돌지만 수집은 증분이라 문제 없다.
+- 매일 21:30 `CallVerifyDaily` 와 평일 18:30 `CallVerifyVod`(방송 자막만 한 번 더)는 `schedule_daily.bat` 이 함께 등록한다. 매일 수집해야 유튜브 게시글이 **하루 이내 정밀도**로 쌓인다. 일요일에는 두 작업이 30분 간격으로 돌지만 수집은 증분이라 문제 없다.
 - 봇: `navi-ev-trading` 에서 쓰던 BotFather 봇 토큰을 그대로 쓴다. 토큰은 `data/tg_bot.json`(gitignore) 에만 저장한다. 봇은 먼저 말을 걸 수 없으므로 대표가 그 봇에게 한 번은 메시지를 보낸 상태여야 한다. 재설정은 `setup_bot.bat`.
 - 해제: `schtasks /delete /tn CallVerifyWeekly /f`
 
