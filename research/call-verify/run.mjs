@@ -65,8 +65,9 @@ function loadMessages(file) {
     return (j.messages || [])
       .filter((m) => m.type === 'message')
       .map((m) => ({
-        id: `tg${m.id}`,
+        id: m.post_id ? `yt${m.id}` : `tg${m.id}`,
         channel: m.channel ?? j.name ?? '',
+        precision: m.date_precision ?? '',
         t: Number(m.date_unixtime) || Date.parse(m.date) / 1000,
         text: Array.isArray(m.text) ? m.text.map((x) => (typeof x === 'string' ? x : x.text)).join('') : String(m.text ?? ''),
       }));
@@ -98,13 +99,15 @@ async function cmdParse(file) {
     if (p.name && byName.has(p.name)) { market = 'UPBIT'; symbol = byName.get(p.name); }
     else if (p.name && /^\d{6}$/.test(p.name)) { market = 'KRX'; symbol = p.name; }
     else flags.push('시장·종목코드 입력 필요');
-    if (!Number.isFinite(m.t)) flags.push('게시 시각 없음');
+    if (!Number.isFinite(m.t) || !m.t) flags.push('게시 시각 없음');
+    if (['week', 'month', 'year', 'unknown'].includes(m.precision)) flags.push(`게시 시각 부정확(${m.precision})`);
     return {
       id: m.id, channel: m.channel, t_post_kst: Number.isFinite(m.t) ? kst(m.t) : '', t_post_unix: Number.isFinite(m.t) ? m.t : '',
       market, symbol, name: p.name ?? '', entry_mode: p.entryMode ?? '', entry: p.entry ?? '', sl: p.sl ?? '',
       tp1: p.tps[0]?.price ?? '', tp2: p.tps[1]?.price ?? '', tp3: p.tps[2]?.price ?? '',
       horizon_days: p.horizonDays, stop_basis: p.stopBasis, stop_hours: p.stopHours ?? '',
-      ok: p.ok && market && Number.isFinite(m.t) ? 1 : 0, flags: flags.join(' / '), text: m.text,
+      ok: p.ok && market && Number.isFinite(m.t) && m.t && !['week', 'month', 'year', 'unknown'].includes(m.precision) ? 1 : 0,
+      flags: flags.join(' / '), text: m.text,
     };
   });
   const out = path.join(DATA, 'ledger.draft.csv');

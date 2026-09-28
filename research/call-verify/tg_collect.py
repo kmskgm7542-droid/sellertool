@@ -93,6 +93,8 @@ async def main():
 
     channels = await pick_channels(client, cfg)
     state = load(STATE, {})
+    if not state.get("v2"):  # 사진·링크 알림도 받도록 바뀐 뒤 첫 실행이면 처음부터 다시 받는다
+        state = {"v2": True}
     existing = load(OUT, {"messages": []})
     by_key = {(m.get("channel"), m["id"]): m for m in existing["messages"]}
 
@@ -102,15 +104,36 @@ async def main():
         min_id = int(state.get(key, 0))
         n = 0
         async for m in client.iter_messages(ch.entity, min_id=min_id, reverse=True):
-            if not m.message:
+            text = m.message or ""
+            urls = []
+            for ent, val in (m.get_entities_text() or []):
+                u = getattr(ent, "url", None) or val
+                if isinstance(u, str) and u.startswith("http"):
+                    urls.append(u)
+            wp = getattr(getattr(m, "web_preview", None), "url", None)
+            if wp:
+                urls.append(wp)
+            has_media = bool(m.photo or m.document)
+            if not text and not urls and not has_media:
                 continue
+            media_path = ""
+            if m.photo:  # 사진 알림(캡처 공지)은 나중에 글자 추출(OCR)용으로 로컬에만 저장
+                mdir = DATA / "tg_media"
+                mdir.mkdir(exist_ok=True)
+                try:
+                    media_path = str(await m.download_media(file=str(mdir / f"{ch.id}_{m.id}")))
+                except Exception as exc:  # 사진 하나 실패해도 수집은 계속
+                    print(f"  사진 저장 실패 {m.id}: {exc}")
             by_key[(ch.name, m.id)] = {
                 "type": "message",
                 "id": m.id,
                 "date": m.date.isoformat(),
                 "date_unixtime": int(m.date.timestamp()),
                 "channel": ch.name,
-                "text": m.message,
+                "text": text,
+                "urls": sorted(set(urls)),
+                "has_media": has_media,
+                "media": Path(media_path).name if media_path else "",
             }
             state[key] = max(int(state.get(key, 0)), m.id)
             n += 1

@@ -30,7 +30,18 @@ node selftest.mjs                        # 규칙 자체 검증(가상 데이터
 3. 이후 실행은 로그인·채널 선택 없이 **새 글만 증분 수집** → `data/result.json` 갱신
 4. `data/result.json` 을 김이사에게 업로드 (또는 PC에서 `node run.mjs parse data/result.json`)
 
-`data/tg_session.session` 은 로그인 정보이므로 외부에 공유하지 않는다. 채널을 바꾸려면 `data/tg_config.json` 의 `channels` 를 지우고 다시 실행한다.
+`data/tg_session.session` 은 로그인 정보이므로 외부에 공유하지 않는다. 채널을 바꾸려면 `data/tg_config.json` 의 `channels` 를 지우고 다시 실행한다. 글자 없는 사진 알림은 `data/tg_media/` 에 저장된다(나중에 글자 추출용).
+
+### 유튜브 회원 게시판 수집 (`yt_posts.bat`, 대표 PC에서 실행)
+
+콜의 본문(진입·손절·목표·기간)은 유튜브 채널 게시판의 회원 전용 글에 올라오고, 텔레그램은 알림 역할이다. 그래서 게시판을 직접 읽는다.
+
+1. `yt_posts.bat` 더블클릭 → 첫 실행은 브라우저(Chromium) 다운로드 2~3분
+2. 채널 주소 입력(첫 회) → 브라우저 창이 열리면 **멤버십 구글 계정으로 유튜브 로그인** → 검은 창에서 Enter (첫 회)
+3. 게시판을 자동으로 스크롤해 글을 모은다 → `data/yt_result.json`
+4. `node run.mjs parse data/yt_result.json` 또는 김이사에게 업로드
+
+유튜브는 "5일 전" 같은 상대 시각만 보여주므로, **처음 본 시점에 역산한 시각**을 저장하고 이후 갱신하지 않는다. `date_precision` 이 `week` 이상이면 진입 시점 판정에 쓰기 어려우니 검토 표시가 붙는다. **매일 한 번 실행**하면 새 글은 하루 이내 정밀도로 쌓인다. 텔레그램 알림 시각(정확)과 게시글을 맞춰 보정하는 단계는 자료가 쌓인 뒤 추가한다.
 
 시세: 코인은 업비트 1시간봉(`api.upbit.com`), 국내주식은 네이버 일봉(`fchart.stock.naver.com`). 이 클라우드 환경에서는 두 도메인이 네트워크 허용 목록에 있어야 한다.
 
