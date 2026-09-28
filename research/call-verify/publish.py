@@ -43,7 +43,7 @@ def explain(status, res):
     if status == 401:
         return "업로드 키가 Vercel 의 CALLS_INGEST_KEY 와 다릅니다. setup_site.bat 에서 키를 다시 맞추세요."
     if status == 503:
-        return "Vercel 프로젝트에 Blob 저장소가 연결되지 않았습니다(Storage → Blob → Connect)."
+        return "Vercel 프로젝트에 Blob 저장소가 연결되지 않았습니다(Storage → Blob → Connect Project)."
     if status == 404:
         return "주소가 틀렸거나 아직 배포되지 않았습니다(/api/calls/ingest 없음)."
     return f"서버 응답 {status}: {res.get('error') or res}"
@@ -58,7 +58,7 @@ def main():
             print("✖", err)
             sys.exit(1)
         if res.get("store") != "ready":
-            print("✖ 서버는 응답하지만 Blob 저장소가 연결되지 않았습니다(Storage → Blob → Connect).")
+            print("✖ 서버는 응답하지만 Blob 저장소가 연결되지 않았습니다(Storage → Blob → Connect Project).")
             sys.exit(1)
         print("✅ 연결 확인:", c["url"] + "/calls")
         return

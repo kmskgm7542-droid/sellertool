@@ -9,8 +9,13 @@ const HISTORY = 'call-verify/history.json';
 
 export class StoreNotConfigured extends Error {
   constructor() {
-    super('저장소가 연결되지 않았습니다. Vercel 프로젝트에 Blob 저장소를 연결하세요(BLOB_READ_WRITE_TOKEN).');
+    super('저장소가 연결되지 않았습니다. Vercel 프로젝트에 Blob 저장소를 연결하세요(BLOB_STORE_ID 또는 BLOB_READ_WRITE_TOKEN).');
   }
+}
+
+// Blob 연결 방식 두 가지: 예전 방식은 BLOB_READ_WRITE_TOKEN, 새 방식(2026)은 BLOB_STORE_ID + Vercel OIDC 토큰(런타임 자동 주입).
+function hasBlobCredentials(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 }
 
 interface Backend {
@@ -59,12 +64,12 @@ function blobBackend(): Backend {
 
 export function getBackend(): Backend {
   if (process.env.CALLS_STORE_DIR) return fsBackend(process.env.CALLS_STORE_DIR);
-  if (process.env.BLOB_READ_WRITE_TOKEN) return blobBackend();
+  if (hasBlobCredentials()) return blobBackend();
   throw new StoreNotConfigured();
 }
 
 export function isStoreConfigured(): boolean {
-  return Boolean(process.env.CALLS_STORE_DIR || process.env.BLOB_READ_WRITE_TOKEN);
+  return Boolean(process.env.CALLS_STORE_DIR) || hasBlobCredentials();
 }
 
 export async function loadLatest(): Promise<Snapshot | null> {
