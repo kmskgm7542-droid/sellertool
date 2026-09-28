@@ -18,6 +18,7 @@ if root:
 else:
     print("PC에서 구글 드라이브 동기화 폴더('내 드라이브')를 찾지 못했습니다.")
     print("1) 'Google Drive 데스크톱' 이 설치되어 있으면 그 폴더 경로를 아래에 붙여넣으세요 (예: G:\\내 드라이브)")
+    print("   또는 드라이브 데스크톱 환경설정 > 내 컴퓨터 > 폴더 추가 로 동기화한 폴더 경로 (예: C:\\Users\\BSCARE\\call-verify-sync)")
     print("2) 설치가 안 되어 있으면 Enter 만 누르세요. 다운로드 페이지를 엽니다.")
     p = input("드라이브 폴더 경로: ").strip().strip('"')
     if not p:
@@ -28,7 +29,8 @@ else:
     if not root.is_dir():
         print("그런 폴더가 없습니다.")
         sys.exit(1)
-    dst = root / "call-verify-sync"
+    # 이미 call-verify-sync 폴더 자체를 붙여넣었으면(드라이브 '폴더 동기화' 방식) 그대로 쓴다
+    dst = root if root.name == "call-verify-sync" else root / "call-verify-sync"
 CFG.write_text(json.dumps({"dir": str(dst)}, ensure_ascii=False, indent=1), "utf-8")
 print(f"동기화 폴더: {dst}")
 r = subprocess.run([sys.executable, str(HERE / "export_drive.py")])
