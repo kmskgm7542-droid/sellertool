@@ -26,7 +26,7 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // 방송에서 쓰는 별칭 → 사전의 공식 이름. "엑스알피(리플)" 같은 괄호 표기는 양쪽 다 별칭으로 만든다.
 export function buildAliases(upbit = {}) {
-  const a = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나' };
+  const a = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나', 하이닉스: 'SK하이닉스', 삼전: '삼성전자', 현차: '현대차' };
   for (const k of Object.keys(upbit)) {
     const m = k.match(/^(.+?)\((.+)\)$/);
     if (m) { a[m[1]] = k; a[m[2]] = k; }
@@ -40,7 +40,8 @@ export function buildNameRegex(krx = {}, upbit = {}) {
   ALIASES = buildAliases(upbit);
   const names = [...Object.keys(krx).filter((n) => n.length >= 3), ...Object.keys(upbit).filter((n) => n.length >= 2), ...Object.keys(ALIASES)];
   const uniq = [...new Set(names)].sort((a, b) => b.length - a.length);
-  return uniq.length ? new RegExp(`(${uniq.map(esc).join('|')})`, 'g') : /$^/;
+  // 앞에 한글·영문·숫자가 붙어 있으면 다른 단어의 일부("하이닉스" 안의 "이닉스")이므로 제외
+  return uniq.length ? new RegExp(`(?<![가-힣A-Za-z0-9])(${uniq.map(esc).join('|')})`, 'g') : /$^/;
 }
 
 // 말투 → 콜 표기. 파서가 아는 단어(매수·손절·목표)로 바꾼다.
