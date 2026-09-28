@@ -211,6 +211,17 @@ async def transcript_panel(page):
         if await cand.count():
             btn = cand.first
     if btn is None:
+        # 설명란에 없으면 제목 아래 '...' 메뉴 → '스크립트 표시'
+        try:
+            more = page.locator('ytd-watch-metadata ytd-menu-renderer button[aria-label="추가 작업"], ytd-watch-metadata ytd-menu-renderer yt-button-shape button').last
+            await more.click(timeout=5000)
+            await page.wait_for_timeout(800)
+            item = page.locator("ytd-menu-service-item-renderer, tp-yt-paper-item").filter(has_text=re.compile("스크립트|Transcript")).first
+            if await item.count():
+                btn = item
+        except Exception:
+            btn = None
+    if btn is None:
         return []
     await btn.click(timeout=8000)
     for _ in range(20):
@@ -243,7 +254,9 @@ async ({ params }) => {
   const r = await fetch(`/youtubei/v1/get_transcript?key=${key}&prettyPrint=false`, {
     method: 'POST', credentials: 'include', headers, body: JSON.stringify({ context: ctx, params }),
   });
-  try { return await r.json(); } catch (e) { return { error: `status ${r.status}` }; }
+  let j = null; try { j = await r.json(); } catch (e) { return { error: `status ${r.status}` }; }
+  if (!r.ok) return { error: `status ${r.status} ${(j && j.error && j.error.message) || ''}` };
+  return j;
 }
 """
 
@@ -263,11 +276,33 @@ def parse_innertube_transcript(j):
 
 
 async def innertube_transcript(page, video_id):
-    j = await page.evaluate(JS_INNERTUBE_TRANSCRIPT, {"params": transcript_params(video_id)})
-    if not isinstance(j, dict) or j.get("error"):
-        return [], f"innertube {j.get('error') if isinstance(j, dict) else '?'}"
-    segs = parse_innertube_transcript(j)
-    return segs, ("innertube" if segs else "innertube 빈 결과")
+    """스크립트 패널이 쓰는 params 를 페이지 데이터(getTranscriptEndpoint)에서 그대로 가져와 호출한다. 없으면 videoId 로 만든 값."""
+    params_list = []
+    data = await page.evaluate("() => (window.ytInitialData || (typeof ytInitialData !== 'undefined' ? ytInitialData : null))")
+    if data:
+        for ep in walk(data, "getTranscriptEndpoint"):
+            if isinstance(ep, dict) and ep.get("params") and ep["params"] not in params_list:
+                params_list.append(ep["params"])
+    if not params_list:
+        html = await page.content()
+        for m in re.finditer(r'"getTranscriptEndpoint":\{"params":"([^"]+)"', html):
+            if m.group(1) not in params_list:
+                params_list.append(m.group(1))
+    params_list.append(transcript_params(video_id))
+    last = "?"
+    for params in params_list:
+        j = await page.evaluate(JS_INNERTUBE_TRANSCRIPT, {"params": params})
+        if not isinstance(j, dict):
+            last = "응답 없음"
+            continue
+        if j.get("error"):
+            last = str(j.get("error"))[:80]
+            continue
+        segs = parse_innertube_transcript(j)
+        if segs:
+            return segs, "innertube"
+        last = "빈 결과"
+    return [], f"innertube {last}"
 
 
 
