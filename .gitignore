@@ -46,3 +46,6 @@ next-env.d.ts
 research/call-verify/data/
 __pycache__/
 *.pyc
+
+# 콜 검증 성적표 로컬 저장소
+.calls-store/

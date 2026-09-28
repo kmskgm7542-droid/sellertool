@@ -53,7 +53,14 @@ def main():
     if not summary.exists():
         print("data/summary.txt 가 없습니다. 먼저 node run.mjs sim 을 실행하세요.")
         sys.exit(1)
-    print("성적표 전송:", send_text(c, summary.read_text("utf-8")))
+    text = summary.read_text("utf-8")
+    site = DATA / "site.json"
+    if site.exists():
+        try:
+            text += "\n\n🔗 " + json.loads(site.read_text("utf-8"))["url"].rstrip("/") + "/calls"
+        except Exception:
+            pass
+    print("성적표 전송:", send_text(c, text))
     report = DATA / "report.md"
     if report.exists():
         print("보고서 첨부:", send_file(c, report, "콜 검증 상세 보고서"))

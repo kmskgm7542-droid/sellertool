@@ -24,6 +24,11 @@
 - 남은 연계 작업: GO 판정(`calcVerdict`) 파이프라인에 환율 가드레일 통합 —
   Phase 3 역직구 마진 판정 카드에서 함께 배선
 
+### ✅ 2026-09-28 — 콜 검증 성적표 페이지 `/calls` (셀러 기능과 무관, 대표 전용)
+- `research/call-verify` 의 주간 결과를 `POST /api/calls/ingest` 로 받아 Vercel Blob(비공개)에 저장, `/calls` 에서 비밀번호 뒤에 표시. noindex.
+- 필요한 환경변수: `CALLS_PASSWORD`, `CALLS_INGEST_KEY`, Blob 연결(`BLOB_READ_WRITE_TOKEN`). 없으면 페이지가 안내문만 띄우고 다른 기능에는 영향 없음.
+- 상세: `research/call-verify/README.md`, 기획 `research/call-verify/docs/web-plan.md`.
+
 ## 🚧 블로커 — CEO 준비물 (키 발급)
 
 `.env.template`를 `.env.local`로 복사 후 채울 것. 실제 키는 커밋 금지.

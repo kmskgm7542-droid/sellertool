@@ -28,6 +28,12 @@ yt_posts.py → tg_collect.py → run.mjs parse data/yt_result.json → run.mjs 
 - 봇: `navi-ev-trading` 에서 쓰던 BotFather 봇 토큰을 그대로 쓴다. 토큰은 `data/tg_bot.json`(gitignore) 에만 저장한다. 봇은 먼저 말을 걸 수 없으므로 대표가 그 봇에게 한 번은 메시지를 보낸 상태여야 한다. 재설정은 `setup_bot.bat`.
 - 해제: `schtasks /delete /tn CallVerifyWeekly /f`
 
+### 성적표 웹페이지 (`/calls`, 비밀번호 보호)
+
+`run.mjs sim` 이 `data/results.json`(웹용 스냅샷, 콜 원문 없음)을 만들고, `publish.py` 가 셀러툴 앱의 `POST /api/calls/ingest` 로 올린다. 서버는 Vercel Blob **비공개** 블롭에 최신본과 주차별 요약을 저장하고, `/calls` 페이지는 비밀번호(쿠키 30일) 뒤에서 판정 카드·자산 곡선·주차 추이·콜 목록·보유중·채널별·검토 필요·규칙을 보여준다. 색인 금지(noindex).
+
+1회 설정: Vercel 프로젝트에 환경변수 `CALLS_PASSWORD`(페이지 비밀번호), `CALLS_INGEST_KEY`(업로드 키) 와 Blob 저장소 연결(`BLOB_READ_WRITE_TOKEN` 자동) → Redeploy → PC에서 `setup_site.bat`(주소·키를 `data/site.json` 에 저장, 연결 확인, 첫 업로드). 이후 `weekly_run.bat` 이 매주 자동 업로드하고 텔레그램 성적표에 링크를 붙인다. 코드: `app/calls`, `app/api/calls/ingest`, `lib/calls`, `components/calls`, 테스트 `__tests__/calls.test.ts`.
+
 ## 수동 흐름 (클라우드 또는 PC 개별 실행)
 
 ```
@@ -99,4 +105,5 @@ A안은 처음 제시된 목표가·손절가를 그대로 적용한다. B안(�
 - 일봉 데이터 특례 추가(`MARKET_CLOSE`, `SL_SAMEDAY`). 이유: 국내주식은 일봉만 확보 가능해 "현재가 매수" 콜이 전부 미체결/제외되던 문제. 결과를 보기 전 9월 원장 기준으로 확정.
 - 주간 자동 루틴 추가(`schedule_weekly.bat`, `weekly_run.bat`, `notify.py`, `setup_bot.py`). 규칙 변경 없음.
 - 원장 병합 중복 판정을 ±2일로 완화(같은 콜이 유튜브·텔레그램에 하루 차이로 잡히던 문제). 규칙 변경 없음.
+- 성적표 웹페이지(B안, 호스팅) 추가. `results.json` 출력·`publish.py`·`/calls`. 규칙 변경 없음.
 - 공개 채널(생존투자 정보알림채널) 사진 1,074장 점검: 표본 24장 전부 차트·썸네일이라 과거 콜 날짜 복원에 쓸 수 없음. 전향적 수집만 유효.

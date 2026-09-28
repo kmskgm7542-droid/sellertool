@@ -280,6 +280,7 @@ function cmdSim() {
     '',
   ];
   const perCall = [];
+  const web = { runs: {}, lastBar: {} };
   for (const [title, opts] of runs) {
     const res = [];
     for (const c of usable) {
@@ -288,8 +289,11 @@ function cmdSim() {
       const bars = JSON.parse(fs.readFileSync(f, 'utf8'));
       const barSec = c.market === 'UPBIT' ? HOUR : DAY;
       res.push(simulate(c, bars, barSec, RULES, COSTS[c.market], opts));
+      const lb = bars[bars.length - 1];
+      if (lb) web.lastBar[c.id] = { t: lb[0], close: lb[4] };
     }
     const s = stats(res, CRITERIA);
+    web.runs[opts.breakevenAfterTp1 ? 'B' : 'A'] = { res, stats: s };
     out.push(renderStats(title, s));
     for (const m of ['UPBIT', 'KRX']) {
       const sub = res.filter((r) => r.market === m);
@@ -314,7 +318,85 @@ function cmdSim() {
   fs.writeFileSync(path.join(DATA, 'report.md'), out.join('\n'));
   writeCsv(path.join(DATA, 'results.csv'), ['id', 'market', 'status', 'mode', 'fill', 'R', 'net', 'reason', 'hold_days'], perCall);
   fs.writeFileSync(path.join(DATA, 'summary.txt'), renderSummary(usable, perCall, excluded));
+  fs.writeFileSync(path.join(DATA, 'results.json'), JSON.stringify(buildWebSnapshot(calls, usable, web), null, 1));
   console.log(`\n보고서: ${path.join(DATA, 'report.md')}`);
+}
+
+// ── 웹 성적표용 스냅샷(data/results.json). 계산은 위와 동일, 형태만 바꾼다. 콜 원문(text)은 넣지 않는다. ──
+const num = (x) => (Number.isFinite(x) ? x : x === Infinity ? 'inf' : null);
+function statsOut(s) {
+  return {
+    calls: s.calls, filled: s.filled, unfilled: s.unfilled, skipped: s.skipped, noData: s.noData,
+    fillRate: num(s.fillRate), winRate: num(s.winRate), meanR: num(s.meanR), medianR: num(s.medianR), sdR: num(s.sdR),
+    t: num(s.t), pf: num(s.pf), mdd: num(s.mdd), finalEquity: num(s.finalEquity), avgHoldDays: num(s.avgHoldDays), incomplete: s.incomplete ?? 0,
+    maxConcurrent: s.maxConcurrent ?? null, reasons: s.exitReasons ?? {}, requiredN: s.requiredN ?? null,
+    verdict: s.verdict,
+    checks: Object.fromEntries(Object.entries(s.checks ?? {}).map(([k, c]) => [k, { pass: c.pass, value: num(c.value), need: c.need }])),
+  };
+}
+function equityCurve(res) {
+  const pts = [{ t: null, v: 1 }];
+  let eq = 1;
+  for (const r of res.filter((r) => r.status === 'FILLED').sort((a, b) => a.tExit - b.tExit)) {
+    eq *= 1 + CRITERIA.riskPerTrade * r.R;
+    pts.push({ t: r.tExit, v: Number(eq.toFixed(5)), id: r.id });
+  }
+  return pts;
+}
+function buildWebSnapshot(calls, usable, web) {
+  const A = web.runs.A;
+  const B = web.runs.B;
+  const byId = new Map(A.res.map((r) => [r.id, r]));
+  const bById = new Map(B.res.map((r) => [r.id, r]));
+  const rows = usable.map((c) => {
+    const r = byId.get(c.id) ?? { status: 'NO_DATA' };
+    const b = bById.get(c.id);
+    const open = r.status === 'FILLED' && r.incomplete;
+    const last = web.lastBar[c.id];
+    return {
+      id: c.id, channel: c.channel, postedAt: c.tPost, postedKst: c.tPostKst, market: c.market, symbol: c.symbol, name: c.name,
+      entryMode: c.entryMode, entry: c.entry, sl: c.sl, tps: c.tps.map((t) => t.price), horizonDays: c.horizonDays,
+      stopBasis: c.stopBasis, stopHours: c.stopHours,
+      status: open ? 'OPEN' : r.status, mode: r.mode ?? null, skipReason: r.reason ?? null,
+      fillPrice: r.pf ?? null, fillAt: r.tFill ?? null, exitAt: r.status === 'FILLED' ? r.tExit : null,
+      exits: (r.exits ?? []).map((x) => ({ w: Number(x.w.toFixed(3)), px: x.px, reason: x.reason, t: x.t })),
+      lastReason: r.lastReason ?? null, R: num(r.R), net: num(r.net), holdDays: num(r.holdDays), riskPct: num(r.risk),
+      RB: num(b?.R), last: last ?? null,
+    };
+  });
+  const group = (key) => {
+    const out = {};
+    for (const k of [...new Set(usable.map((c) => c[key]))].filter(Boolean)) {
+      const ids = new Set(usable.filter((c) => c[key] === k).map((c) => c.id));
+      out[k] = statsOut(stats(A.res.filter((r) => ids.has(r.id)), CRITERIA));
+    }
+    return out;
+  };
+  let pending = [];
+  try {
+    pending = fs.readFileSync(path.join(DATA, 'pending_review.txt'), 'utf8').trim().split('\n').filter(Boolean)
+      .map((l) => { const [id, t, name, why] = l.split(' | '); return { id, t, name, why: why ?? '' }; });
+  } catch { /* 없음 */ }
+  return {
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    week: isoWeek(new Date()),
+    counts: { ledger: calls.length, usable: usable.length, excluded: calls.length - usable.length },
+    stats: { A: statsOut(A.stats), B: statsOut(B.stats) },
+    equity: { A: equityCurve(A.res), B: equityCurve(B.res) },
+    calls: rows,
+    byMarket: group('market'),
+    byChannel: group('channel'),
+    pending,
+    rules: { RULES, COSTS, CRITERIA },
+  };
+}
+function isoWeek(d) {
+  const x = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const day = x.getUTCDay() || 7;
+  x.setUTCDate(x.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1));
+  return `${x.getUTCFullYear()}-W${String(Math.ceil(((x - y0) / DAY / 1000 + 1) / 7)).padStart(2, '0')}`;
 }
 
 // 텔레그램으로 보낼 짧은 성적표 (A안 기준)
