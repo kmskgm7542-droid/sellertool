@@ -162,6 +162,87 @@ async def player_response(page):
 
 
 
+def parse_xml_captions(xml):
+    import html as _html
+    segs = []
+    for m in re.finditer(r'<text start="([\d.]+)"(?: dur="([\d.]+)")?[^>]*>(.*?)</text>', xml, re.S):
+        text = _html.unescape(re.sub(r"<[^>]+>", "", m.group(3))).replace("\n", " ").strip()
+        if text:
+            segs.append({"t": round(float(m.group(1)), 1), "d": round(float(m.group(2) or 0), 1), "text": text})
+    return segs
+
+
+JS_TRANSCRIPT = r"""
+() => [...document.querySelectorAll('ytd-transcript-segment-renderer')].map(el => ({
+  ts: (el.querySelector('.segment-timestamp')?.innerText || '').trim(),
+  text: (el.querySelector('.segment-text, yt-formatted-string.segment-text')?.innerText || '').replace(/\s+/g, ' ').trim(),
+}))
+"""
+
+
+def hms(ts):
+    parts = [int(x) for x in ts.split(":") if x.strip().isdigit()]
+    sec = 0
+    for x in parts:
+        sec = sec * 60 + x
+    return sec
+
+
+async def transcript_panel(page):
+    """재생 페이지의 '스크립트 표시' 패널에서 자막을 읽는다(타임텍스트 요청이 막혔을 때)."""
+    try:
+        exp = page.locator("#description #expand, tp-yt-paper-button#expand, #expand").first
+        if await exp.count():
+            await exp.click(timeout=5000)
+            await page.wait_for_timeout(800)
+    except Exception:
+        pass
+    btn = page.get_by_role("button", name=re.compile("스크립트|Transcript|자막 텍스트")).first
+    if await btn.count() == 0:
+        btn = page.locator("ytd-video-description-transcript-section-renderer button").first
+    if await btn.count() == 0:
+        return []
+    await btn.click(timeout=8000)
+    for _ in range(20):
+        await page.wait_for_timeout(1000)
+        rows = await page.evaluate(JS_TRANSCRIPT)
+        if len(rows) > 5:
+            segs = [{"t": float(hms(r["ts"])), "d": 0.0, "text": r["text"]} for r in rows if r["text"]]
+            return segs
+    return []
+
+
+async def fetch_captions(page, tr):
+    """자막 구간 목록과 방식 이름을 돌려준다. 실패하면 ([], 이유)."""
+    base = tr.get("baseUrl") or ""
+    if base:
+        url = base + ("&" if "?" in base else "?") + "fmt=json3"
+        try:
+            resp = await page.request.get(url)
+            txt = (await resp.text()).strip() if resp.status == 200 else ""
+            if txt.startswith("{"):
+                segs = parse_json3(json.loads(txt))
+                if segs:
+                    return segs, "json3"
+            if txt.startswith("<"):
+                segs = parse_xml_captions(txt)
+                if segs:
+                    return segs, "xml"
+            reason = f"timedtext {resp.status} 빈 응답"
+        except Exception as exc:
+            reason = f"timedtext {type(exc).__name__}"
+    else:
+        reason = "baseUrl 없음"
+    try:
+        segs = await transcript_panel(page)
+        if segs:
+            return segs, "panel"
+    except Exception as exc:
+        reason += f" / panel {type(exc).__name__}"
+    return [], reason
+
+
+
 async def main():
     DATA.mkdir(exist_ok=True)
     VOD.mkdir(exist_ok=True)
@@ -189,6 +270,7 @@ async def main():
 
         got = 0
         for v in videos:
+          try:
             st = state["videos"].get(v["id"], {})
             if st.get("done"):
                 continue
@@ -215,21 +297,22 @@ async def main():
                 print(f"  {v['title'][:40]} — 한국어 자막 아직 없음(생성 대기, {RETRY_DAYS}일 재시도)")
                 state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "no_captions": True}
                 continue
-            url = tr["baseUrl"] + ("&" if "?" in tr["baseUrl"] else "?") + "fmt=json3"
-            resp = await page.request.get(url)
-            if resp.status != 200:
-                print(f"  {v['id']} 자막 요청 실패 {resp.status}")
-                state["videos"][v["id"]] = {"first_seen": first, "title": v["title"]}
+            segs, how = await fetch_captions(page, tr)
+            if not segs:
+                print(f"  {v['title'][:40]} — 자막 내용을 받지 못함({how}), 다음에 재시도")
+                state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "fetch_fail": how}
                 continue
-            segs = parse_json3(await resp.json())
             start_unix = int(datetime.fromisoformat(start_ts.replace("Z", "+00:00")).timestamp()) if start_ts else 0
             save(VOD / f"{v['id']}.json", {
                 "videoId": v["id"], "title": v["title"], "startTimestamp": start_ts, "startUnix": start_unix,
-                "trackKind": tr.get("kind", "manual"), "segments": segs, "collected_at": now.isoformat(),
+                "trackKind": tr.get("kind", "manual"), "how": how, "segments": segs, "collected_at": now.isoformat(),
             })
             state["videos"][v["id"]] = {"first_seen": first, "title": v["title"], "done": True, "segments": len(segs), "start": start_ts}
             got += 1
-            print(f"  ✅ {v['title'][:40]} — 자막 {len(segs)}구간, 시작 {start_ts or '미상'}")
+            print(f"  ✅ {v['title'][:40]} — 자막 {len(segs)}구간, 시작 {start_ts or '미상'} ({how})")
+          except Exception as exc:
+            print(f"  {v.get('title', v['id'])[:40]} — 처리 오류 {type(exc).__name__}: {str(exc)[:120]} (다음에 재시도)")
+            save(STATE, state)
         try:
             await ctx.close()
         except Exception:
