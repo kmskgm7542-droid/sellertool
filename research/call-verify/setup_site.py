@@ -13,7 +13,10 @@ CFG = DATA / "site.json"
 DATA.mkdir(exist_ok=True)
 
 old = json.loads(CFG.read_text("utf-8")) if CFG.exists() else {}
-default_url = old.get("url") or "https://seller-tool.vercel.app"
+DEFAULT_URL = "https://sellertool.vercel.app"  # 셀러툴 운영 주소(Vercel 프로젝트 sellertool, master 브랜치)
+default_url = old.get("url") or DEFAULT_URL
+if default_url.rstrip("/") == "https://seller-tool.vercel.app":  # 예전 안내의 잘못된 주소는 바꿔 제안
+    default_url = DEFAULT_URL
 url = input(f"성적표 사이트 주소 [Enter={default_url}]: ").strip() or default_url
 url = url.rstrip("/")
 if not url.startswith("http"):
