@@ -215,7 +215,17 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
   const entryDeadline = call.tPost + rules.entryWindowDays * DAY;
   let j = -1;
   let pf = null;
-  for (let i = i0; i < bars.length && bars[i][0] < entryDeadline; i++) {
+  let closeFill = false;
+  // 일봉 데이터에 장중 게시된 "현재가 매수"는 그날 종가에 체결한 것으로 본다(다음 날 시가까지 기다리면 실제보다 늦다)
+  if (mode === 'MARKET' && barSec >= DAY && prev + 1 < bars.length) {
+    const b = bars[prev + 1];
+    if (b[0] <= call.tPost && call.tPost < b[0] + barSec) {
+      j = prev + 1;
+      pf = b[4];
+      closeFill = true;
+    }
+  }
+  for (let i = i0; j < 0 && i < bars.length && bars[i][0] < entryDeadline; i++) {
     const [, o, h, l] = bars[i];
     if (mode === 'MARKET') { j = i; pf = o; break; }
     if (mode === 'LIMIT' && l <= call.entry) { j = i; pf = Math.min(o, call.entry); break; }
@@ -224,6 +234,18 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
   if (j < 0) return { ...base, status: 'UNFILLED', mode, pPost };
 
   const tps = call.tps;
+  if (closeFill && pf <= call.sl) {
+    // 장중에 현재가로 샀는데 그날 종가가 이미 손절가 아래 → 당일 손절로 본다.
+    // 장중 체결가는 알 수 없으므로 손절가 바로 위(+1%)에 산 것으로 근사(−1R 근처의 손실).
+    const guess = call.sl * 1.01;
+    const net = (pf * (1 - cost.sell)) / (guess * (1 + cost.buy)) - 1;
+    const risk = 0.01;
+    return {
+      ...base, status: 'FILLED', mode: 'MARKET_CLOSE', pf: guess, risk, net, R: net / risk,
+      tFill: bars[j][0], tExit: bars[j][0], holdDays: 0,
+      exits: [{ w: 1, px: pf, reason: 'SL_SAMEDAY', t: bars[j][0] }], lastReason: 'SL_SAMEDAY', incomplete: false,
+    };
+  }
   if (pf <= call.sl) return { ...base, status: 'SKIPPED', reason: '진입 시점에 이미 손절가 이하', mode, pf };
   if (pf >= tps[0].price) return { ...base, status: 'SKIPPED', reason: '진입 시점에 이미 1차 목표 도달', mode, pf };
 
@@ -241,7 +263,7 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
     remaining -= w;
   };
 
-  for (let k = j; k < bars.length && remaining > 1e-9; k++) {
+  for (let k = closeFill ? j + 1 : j; k < bars.length && remaining > 1e-9; k++) {
     const [t, o, h, l, c] = bars[k];
     const fillBar = k === j;
 
@@ -292,7 +314,7 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
   return {
     ...base,
     status: 'FILLED',
-    mode,
+    mode: closeFill ? 'MARKET_CLOSE' : mode,
     pf,
     risk,
     net,

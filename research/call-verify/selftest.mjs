@@ -101,6 +101,20 @@ const N = 24 * 20;
   ok(s.status === 'SKIPPED' && s.reason === '진입 시점에 이미 1차 목표 도달', '진입가를 넘어 목표까지 갭 → 매매 제외');
 }
 
+{
+  // 일봉 + 장중 게시 현재가 매수 → 당일 종가 체결, 다음 날 시가 갭 손절
+  const D = 86400;
+  const T1 = Date.UTC(2025, 0, 6) / 1000 - 9 * 3600; // KST 00:00
+  const bars = Array.from({ length: 10 }, (_, i) => [T1 + i * D, 1000, 1010, 990, 1000]);
+  bars[3] = [T1 + 3 * D, 1000, 1050, 995, 1020]; // 게시일: 종가 1020
+  bars[4] = [T1 + 4 * D, 940, 960, 930, 950]; // 다음 날 갭 하락 시가 940 < 손절 960
+  const r = simulate(
+    { id: 't', market: 'KRX', tPost: T1 + 3 * D + 12 * 3600, entryMode: 'MARKET', entry: null, sl: 960, tps: [{ price: 1200, weight: 1 }], horizonDays: 14, stopBasis: 'TOUCH', stopHours: null },
+    bars, D, RULES, zero,
+  );
+  ok(r.mode === 'MARKET_CLOSE' && r.pf === 1020 && r.lastReason === 'SL_GAP' && near(r.R, (940 / 1020 - 1) / ((1020 - 960) / 1020)), '일봉·장중 현재가 매수 → 당일 종가 체결 후 다음 날 갭 손절');
+}
+
 // ───────── 통계 ─────────
 {
   const res = [5, -1, -1, 3, -1].map((R, i) => ({ status: 'FILLED', R, tFill: i, tExit: i + 0.5, holdDays: 1, lastReason: 'x', incomplete: false }));
