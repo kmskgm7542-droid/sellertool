@@ -25,15 +25,40 @@ try:
 except Exception as exc:
     print(f"업비트 목록 실패: {exc}")
 
+krx = {}
 try:
-    html = get("https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13").decode("euc-kr", "ignore")
-    krx = {}
-    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
-        tds = [re.sub(r"<[^>]+>", "", t).strip() for t in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
-        if len(tds) >= 2 and re.fullmatch(r"\d{6}", tds[1]):
-            krx[tds[0]] = tds[1]
-    (DATA / "krx_list.json").write_text(json.dumps(krx, ensure_ascii=False, indent=1), "utf-8")
-    print(f"한국거래소 상장사 {len(krx)}종목 저장")
+    # 네이버 증권(모바일 API): 코스피·코스닥 시가총액 순 전체 목록, 100개씩 페이지
+    for market in ("KOSPI", "KOSDAQ"):
+        page = 1
+        while page < 60:
+            j = json.loads(get(f"https://m.stock.naver.com/api/stocks/marketValue/{market}?page={page}&pageSize=100"))
+            items = j.get("stocks") or j.get("result") or []
+            if not items:
+                break
+            for it in items:
+                code, name = it.get("itemCode"), it.get("stockName")
+                if code and name and re.fullmatch(r"\d{6}", code):
+                    krx[name] = code
+            if len(items) < 100:
+                break
+            page += 1
+    print(f"네이버: 코스피·코스닥 {len(krx)}종목")
 except Exception as exc:
-    print(f"거래소 목록 실패: {exc}")
+    print(f"네이버 목록 실패: {exc}")
+
+if len(krx) < 500:
+    try:  # 예비: 한국거래소 KIND
+        html = get("https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13").decode("euc-kr", "ignore")
+        for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+            tds = [re.sub(r"<[^>]+>", "", t).strip() for t in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+            if len(tds) >= 2 and re.fullmatch(r"\d{6}", tds[1]):
+                krx.setdefault(tds[0], tds[1])
+        print(f"KIND 포함 {len(krx)}종목")
+    except Exception as exc:
+        print(f"KIND 목록 실패: {exc}")
+
+(DATA / "krx_list.json").write_text(json.dumps(krx, ensure_ascii=False, indent=1), "utf-8")
+print(f"국내주식 {len(krx)}종목 저장 → {DATA / 'krx_list.json'}")
+if len(krx) < 500:
+    print("⚠ 종목 수가 너무 적습니다. 이 창을 캡처해 주세요.")
     sys.exit(1)
