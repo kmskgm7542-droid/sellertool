@@ -11,7 +11,17 @@ class _Tee:
         self.fh = fh
 
     def write(self, s):
-        self.stream.write(s)
+        # 화면 쪽이 cp949 등으로 잡혀 있어도 실행은 절대 멈추지 않게: 못 쓰는 글자는 ? 로 바꿔 찍는다
+        try:
+            self.stream.write(s)
+        except UnicodeEncodeError:
+            enc = getattr(self.stream, "encoding", None) or "utf-8"
+            try:
+                self.stream.write(s.encode(enc, errors="replace").decode(enc, errors="replace"))
+            except Exception:
+                pass
+        except Exception:
+            pass
         self.fh.write(s)
         self.fh.flush()
 
