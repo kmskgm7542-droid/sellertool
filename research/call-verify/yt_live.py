@@ -197,26 +197,53 @@ def transcript_params(video_id):
 # 화면에 열린 스크립트 패널의 줄들
 JS_TRANSCRIPT_DOM = r"""
 () => {
-  const segs = [...document.querySelectorAll('ytd-transcript-segment-renderer')].map(el => ({
-    ts: (el.querySelector('.segment-timestamp')?.innerText || '').trim(),
-    text: (el.querySelector('.segment-text, yt-formatted-string.segment-text')?.innerText || '').replace(/\s+/g, ' ').trim(),
-  })).filter(s => s.ts && s.text);
+  // 시각 표시 줄: "3:57", "1:03:57", 그리고 화면 낭독용 "3분 57초", "1시간 3분 57초" — 이런 줄은 문장이 아니다
+  const isClock = (s) => /^\d{1,2}:\d{2}(:\d{2})?$/.test(s);
+  const isSpokenTime = (s) => /^(\d+\s*시간\s*)?(\d+\s*분\s*)?(\d+\s*초)?$/.test(s) && /\d/.test(s);
+  const isTime = (s) => isClock(s) || isSpokenTime(s);
+  const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const segs = [...document.querySelectorAll('ytd-transcript-segment-renderer')].map(el => {
+    const ts = clean(el.querySelector('.segment-timestamp')?.innerText);
+    let text = clean(el.querySelector('.segment-text, yt-formatted-string.segment-text')?.innerText);
+    if (!text || isTime(text)) {
+      // 요소 전체 글에서 시각 줄을 걷어낸 나머지가 문장
+      text = (el.innerText || '').split('\n').map(clean).filter(l => l && !isTime(l)).join(' ');
+    }
+    return { ts, text };
+  }).filter(s => s.ts && s.text && !isTime(s.text));
   if (segs.length > 5) return segs;
-  // 대체: 스크립트 패널 영역의 텍스트를 줄 단위로 읽어 "시각 줄 → 문장 줄" 쌍으로 만든다
+  // 대체: 스크립트 패널 영역의 텍스트를 줄 단위로 읽어 "시각 줄 → (낭독 시각 줄 건너뛰고) 문장 줄" 쌍으로 만든다
   const panel = [...document.querySelectorAll('ytd-engagement-panel-section-list-renderer')]
     .find(p => /transcript|스크립트/i.test(p.getAttribute('target-id') || '') || /스크립트/.test(p.innerText.slice(0, 200)));
   if (!panel) return [];
-  const lines = panel.innerText.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = panel.innerText.split('\n').map(clean).filter(Boolean);
   const out = [];
-  for (let i = 0; i < lines.length - 1; i++) {
-    if (/^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i]) && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(lines[i + 1])) {
-      out.push({ ts: lines[i], text: lines[i + 1].replace(/\s+/g, ' ') });
-      i++;
+  for (let i = 0; i < lines.length; i++) {
+    if (!isClock(lines[i])) continue;
+    let j = i + 1;
+    while (j < lines.length && isSpokenTime(lines[j])) j++;
+    if (j < lines.length && !isTime(lines[j])) {
+      out.push({ ts: lines[i], text: lines[j] });
+      i = j;
     }
   }
   return out;
 }
 """
+
+
+def looks_like_time(text):
+    """'3분 57초', '1:03:57' 처럼 시각 표시만 있는 줄인지"""
+    t = (text or "").strip()
+    return bool(re.fullmatch(r"\d{1,2}:\d{2}(:\d{2})?", t) or (re.fullmatch(r"(\d+\s*시간\s*)?(\d+\s*분\s*)?(\d+\s*초)?", t) and re.search(r"\d", t)))
+
+
+def segments_are_garbage(segs):
+    """자막이 문장이 아니라 시각 표시로만 채워졌는지(화면 읽기 경로가 잘못 긁은 경우)"""
+    if not segs:
+        return True
+    bad = sum(1 for s in segs if looks_like_time(s.get("text", "")))
+    return bad * 2 > len(segs)
 
 # 페이지 안에서 유튜브 내부 API(get_transcript)를 패널과 같은 방식으로 호출
 JS_INNERTUBE = r"""
@@ -372,7 +399,8 @@ async def fetch_captions(page, tr, video_id, captured=None):
                 await page.wait_for_timeout(800)
                 how_clicked = await page.evaluate(JS_CLICK_MENU_TRANSCRIPT)
         if how_clicked:
-            for _ in range(15):
+            dom_rows = []
+            for i in range(20):
                 await page.wait_for_timeout(1000)
                 for r in list(captured):
                     if "get_transcript" in r.url and r.ok:
@@ -382,10 +410,14 @@ async def fetch_captions(page, tr, video_id, captured=None):
                                 return segs, f"panel-response({how_clicked})"
                         except Exception:
                             pass
-                rows = await page.evaluate(JS_TRANSCRIPT_DOM)
-                if len(rows) > 5:
-                    return [{"t": float(hms(r["ts"])), "d": 0.0, "text": r["text"]} for r in rows if r["text"]], f"panel-dom({how_clicked})"
-            reasons.append(f"panel 열림({how_clicked}) 그러나 줄 없음")
+                # 네트워크 응답이 몇 초 안에 안 오면 화면의 줄을 읽는다(시각 표시만 긁힌 결과는 버린다)
+                if i >= 4:
+                    rows = await page.evaluate(JS_TRANSCRIPT_DOM)
+                    segs = [{"t": float(hms(r["ts"])), "d": 0.0, "text": r["text"]} for r in rows if r.get("text")]
+                    if len(segs) > 5 and not segments_are_garbage(segs):
+                        return segs, f"panel-dom({how_clicked})"
+                    dom_rows = rows
+            reasons.append(f"panel 열림({how_clicked}) 그러나 문장 줄 없음(화면 줄 {len(dom_rows)}개)")
         else:
             reasons.append("panel 버튼 못 찾음")
     except Exception as exc:
@@ -404,6 +436,34 @@ async def fetch_captions(page, tr, video_id, captured=None):
     return [], " / ".join(reasons)
 
 
+def purge_bad_vods(state):
+    """예전 버전이 시각 표시만 긁어 저장한 자막 파일을 지우고, 다음 실행에서 다시 받게 한다.
+    추출 상태(extract_state.json)에서도 빼서 규칙 추출이 다시 돌게 한다."""
+    extract_state_path = DATA / "extract_state.json"
+    ex = load(extract_state_path, {"videos": {}})
+    purged = 0
+    for f in sorted(VOD.glob("*.json")):
+        try:
+            v = load(f, {})
+        except Exception:
+            continue
+        if segments_are_garbage(v.get("segments") or []):
+            vid = v.get("videoId") or f.stem
+            f.unlink(missing_ok=True)
+            st = state["videos"].get(vid)
+            if st:
+                st.pop("done", None)
+                st.pop("segments", None)
+                st["first_seen"] = datetime.now(timezone.utc).isoformat()
+                st["refetch"] = "시각 표시만 저장됨"
+            ex.get("videos", {}).pop(vid, None)
+            purged += 1
+            print(f"  ↻ {v.get('title', vid)[:40]} — 자막이 시각 표시만 들어 있어 다시 받습니다")
+    if purged:
+        save(extract_state_path, ex)
+        save(STATE, state)
+
+
 async def main():
     DATA.mkdir(exist_ok=True)
     VOD.mkdir(exist_ok=True)
@@ -414,6 +474,7 @@ async def main():
     base = re.sub(r"/(posts|community|videos|streams|featured)$", "", cfg["channel_url"])
     state = load(STATE, {"videos": {}})
     now = datetime.now(timezone.utc)
+    purge_bad_vods(state)
 
     async with async_playwright() as pw:
         ctx = await pw.chromium.launch_persistent_context(

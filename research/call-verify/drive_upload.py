@@ -127,6 +127,30 @@ async def main():
                 seen = await page.locator(f"text={stamp}_").count()
                 if seen >= len(files):
                     break
+            # 빠진 파일 재시도: 한 번에 여러 개를 올리면 드라이브 웹이 몇 개를 조용히 떨어뜨리는 경우가 있다
+            for attempt in range(3):
+                await page.reload(wait_until="domcontentloaded")
+                await page.wait_for_timeout(4000)
+                missing = []
+                for f in files:
+                    if await page.locator(f'text="{f.name}"').count() == 0:
+                        missing.append(f)
+                if not missing:
+                    break
+                print(f"  빠진 파일 {len(missing)}개 다시 올립니다 ({attempt + 1}/3): " + ", ".join(f.name[len(stamp) + 1:] for f in missing[:6]) + (" …" if len(missing) > 6 else ""))
+                try:
+                    inputs = page.locator("input[type=file]:not([webkitdirectory])")
+                    if await inputs.count() == 0:
+                        await page.get_by_role("button", name="신규").first.click(timeout=10000)
+                        await page.wait_for_timeout(1000)
+                    if await inputs.count() > 0:
+                        # 몇 개씩 나눠 올린다
+                        for k in range(0, len(missing), 5):
+                            await inputs.first.set_input_files([str(f) for f in missing[k:k + 5]])
+                            await page.wait_for_timeout(6000)
+                except Exception as exc:
+                    print(f"  재시도 실패: {type(exc).__name__}: {str(exc)[:120]}")
+                await page.wait_for_timeout(8000)
             await page.reload(wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
             uploaded = await page.locator(f"text={stamp}_").count()
