@@ -5,10 +5,10 @@ export const HOUR = 3600;
 export const DAY = 86400;
 
 const NUM = String.raw`(\d+(?:\.\d+)?)`;
-const UNIT = String.raw`\s*(만|천)?\s*원?`;
 
 function toPrice(n, unit) {
   const v = Number(n);
+  if (unit === '억') return v * 100000000;
   if (unit === '만') return v * 10000;
   if (unit === '천') return v * 1000;
   return v;
@@ -22,8 +22,13 @@ function blank(s, m) {
 export function normalizePrices(text) {
   let s = String(text);
   while (/(\d),(\d{3})/.test(s)) s = s.replace(/(\d),(\d{3})/, '$1$2');
+  // "1억2천만" "1억5백만" "1억2000만" → 원 단위 숫자 (코인 원화 가격)
+  s = s.replace(
+    /(\d+(?:\.\d+)?)\s*억\s*(\d+(?:\.\d+)?)\s*(천만|백만|만)(?:\s*원)?/g,
+    (_, a, b, u) => `${Number(a) * 1e8 + Number(b) * (u === '천만' ? 1e7 : u === '백만' ? 1e6 : 1e4)}원`,
+  );
   return s.replace(
-    /(\d+(?:\.\d+)?)\s*만\s*(\d+(?:\.\d+)?)\s*천\s*원?/g,
+    /(\d+(?:\.\d+)?)\s*만\s*(\d+(?:\.\d+)?)\s*천(?:\s*원)?/g,
     (_, a, b) => `${Number(a) * 10000 + Number(b) * 1000}원`,
   );
 }
@@ -68,14 +73,15 @@ export function parseStopBasis(text) {
 }
 
 // 숫자 뒤에 이런 말이 붙으면 가격이 아니다(기간·비율·차트 용어)
-const NOT_PRICE = String.raw`(?!\s*(?:%|퍼|배|번|개|명|일|주|개월|달|월|년|시간|분|봉|선|이평|파|차|층|k|K|불|달러|\$))`;
-const P = NUM + String.raw`\s*(만|천)?\s*원?` + NOT_PRICE; // 가격 하나: [숫자, 단위]
+// "3.5만 일봉종가"의 "일봉"은 기간이 아니므로 예외
+const NOT_PRICE = String.raw`(?!\s*(?:%|퍼|배|번|개|명|일(?!봉)|주(?!봉)|개월|달|월|년|시간|분|봉|선|이평|파|차|층|k|K|불|달러|\$))`;
+const P = NUM + String.raw`\s*(억|만|천)?\s*원?` + NOT_PRICE; // 가격 하나: [숫자, 단위]
 // "매수유효" "매수가 안오면" "매수 유지" 는 진입 지시가 아니다
 const ENTRY_WORD = String.raw`(?:분할\s*)?(?:매수|진입|롱)(?!\s*(?:유효|가\s*안|유지|하지\s*마|금지))`;
 // 진입 앵커: "174매수" "16~15매수자리" "1850이하 매수진입" "185부근 매수" "현재가 매수"
 const ENTRY_RE = new RegExp(
   String.raw`(?:` + P + String.raw`(?:\s*~\s*` + P + String.raw`)?\s*(?:이하|이상|부근|근처|대|정도|까지|위|아래)?\s*(?:에서|에|부터)?\s*` + ENTRY_WORD +
-  String.raw`|현재가\s*(?:에서|에)?\s*` + ENTRY_WORD + String.raw`?)`,
+  String.raw`|현재가\s*(?:에서|에)?\s*` + ENTRY_WORD + String.raw`?|(?:지금|시장가)\s*(?:에서|에|로)?\s*` + ENTRY_WORD + String.raw`)`,
   'g',
 );
 // 손절: "160이탈손절" "240이탈시 손절" "13천 칼손절" "480컷" "473원 일봉종가이탈컷" "손절 8%대 이하"(무시)
@@ -85,7 +91,7 @@ const SL_RE2 = new RegExp(String.raw`(?:손절가|손절|컷)\s*(?:은|는|가|�
 const TP_RANGE_RE = new RegExp(P + String.raw`\s*~\s*` + P, 'g');
 const TP_WORD_RE = new RegExp(P + String.raw`\s*(?:정도|대)?\s*(?:익절|목표|봅니다|보겠|볼수|볼\s*수|위에|이상|까지|노려|도달|가능|갈|간다|보고|보면)`, 'g');
 const TP_LEAD_RE = new RegExp(String.raw`(?:목표가?|익절가?|익절은|목표는)\s*(?:은|는|가|:)?\s*` + P, 'g');
-const TP_UNIT_RE = new RegExp(NUM + String.raw`\s*(?:(만|천)\s*원?|원)` + NOT_PRICE, 'g');
+const TP_UNIT_RE = new RegExp(NUM + String.raw`\s*(?:(억|만|천)\s*원?|원)` + NOT_PRICE, 'g');
 
 // 조사 떼기 — 두 글자 종목명("온도", "지토")이 잘리지 않도록 세 글자 이상일 때만
 const strip = (s) => (s.length >= 3 ? s.replace(/(을|를|은|는|이|가|도|만|의|에|로)$/, '') : s);
@@ -205,7 +211,13 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
 
   let prev = -1;
   for (let i = 0; i < bars.length && bars[i][0] + barSec <= call.tPost; i++) prev = i;
-  const pPost = prev >= 0 ? bars[prev][4] : bars[i0][1];
+  let pPost = prev >= 0 ? bars[prev][4] : bars[i0][1];
+
+  // 일봉(국내주식): 게시 시각이 그날 장 마감 이후면 그날 봉은 이미 끝난 것 → 기준가는 그날 종가, 체결은 다음 봉부터
+  const cutoff = (rules.dailyFillCutoffHours ?? 24) * HOUR;
+  const dayIdx = barSec >= DAY ? bars.findIndex((b) => b[0] <= call.tPost && call.tPost < b[0] + barSec) : -1;
+  const afterClose = dayIdx >= 0 && call.tPost - bars[dayIdx][0] >= cutoff;
+  if (afterClose) { prev = dayIdx; pPost = bars[dayIdx][4]; }
 
   let mode = 'MARKET';
   if (call.entryMode === 'PRICE') {
@@ -218,7 +230,7 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
   let pf = null;
   let closeFill = false;
   // 일봉 데이터에 장중 게시된 "현재가 매수"는 그날 종가에 체결한 것으로 본다(다음 날 시가까지 기다리면 실제보다 늦다)
-  if (mode === 'MARKET' && barSec >= DAY && prev + 1 < bars.length) {
+  if (mode === 'MARKET' && barSec >= DAY && !afterClose && prev + 1 < bars.length) {
     const b = bars[prev + 1];
     if (b[0] <= call.tPost && call.tPost < b[0] + barSec) {
       j = prev + 1;
@@ -226,7 +238,7 @@ export function simulate(call, bars, barSec, rules, cost, opts = {}) {
       closeFill = true;
     }
   }
-  for (let i = i0; j < 0 && i < bars.length && bars[i][0] < entryDeadline; i++) {
+  for (let i = afterClose ? dayIdx + 1 : i0; j < 0 && i < bars.length && bars[i][0] < entryDeadline; i++) {
     const [, o, h, l] = bars[i];
     if (mode === 'MARKET') { j = i; pf = o; break; }
     if (mode === 'LIMIT' && l <= call.entry) { j = i; pf = Math.min(o, call.entry); break; }

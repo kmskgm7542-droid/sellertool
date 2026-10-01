@@ -11,7 +11,17 @@ class _Tee:
         self.fh = fh
 
     def write(self, s):
-        self.stream.write(s)
+        # 화면 쪽이 cp949 등으로 잡혀 있어도 실행은 절대 멈추지 않게: 못 쓰는 글자는 ? 로 바꿔 찍는다
+        try:
+            self.stream.write(s)
+        except UnicodeEncodeError:
+            enc = getattr(self.stream, "encoding", None) or "utf-8"
+            try:
+                self.stream.write(s.encode(enc, errors="replace").decode(enc, errors="replace"))
+            except Exception:
+                pass
+        except Exception:
+            pass
         self.fh.write(s)
         self.fh.flush()
 
@@ -24,6 +34,12 @@ class _Tee:
 
 
 def start(name, data_dir):
+    # 작업 스케줄러로 돌 때 화면 출력이 cp949 로 잡혀 '—', '✖' 같은 글자에서 죽는다 → UTF-8 로 고정(못 쓰는 글자는 ?)
+    for st in (sys.stdout, sys.stderr):
+        try:
+            st.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
     data_dir.mkdir(exist_ok=True)
     fh = open(data_dir / f"{name}_run.log", "a", encoding="utf-8")
     fh.write(f"\n===== {datetime.now():%Y-%m-%d %H:%M:%S} 시작 (python {sys.version.split()[0]}) =====\n")

@@ -125,5 +125,37 @@ const N = 24 * 20;
   ok(near(s.mdd, expectMdd, 1e-9), '통계: 최대낙폭(건당 1% 복리)');
 }
 
+// ───────── 방송 직접 기록(live.mjs) 형식 ─────────
+{
+  const p = parseCall('9500만 아래 매수 손절 9000만 목표 1억 1주', RULES);
+  ok(p.ok && p.entry === 95000000 && p.sl === 90000000 && p.tps[0].price === 100000000 && p.horizonDays === 7, '억 단위 가격("1억")');
+  ok(normalizePrices('1억2천만 목표') === '120000000원 목표', '"1억2천만" 정규화');
+  const q = parseCall('지금 매수 손절 3만 목표 3.5만 일봉종가', RULES);
+  ok(q.ok && q.entryMode === 'MARKET' && q.sl === 30000 && q.tps[0].price === 35000 && q.stopBasis === 'CLOSE' && q.stopHours === 24, '"지금 매수" = 현재가 진입, "3.5만 일봉종가"의 일봉은 기간 아님');
+  const { interpret } = await import('./live.mjs');
+  const r = interpret('샘플전자 7만 매수 손절 6.8만 목표 7.5만 8만 2주', (n) => (n === '샘플전자' ? ['KRX', '000000'] : null));
+  ok(r.kind === 'call' && r.name === '샘플전자' && r.parsed.ok && r.hit[1] === '000000' && /✅ 기록/.test(r.reply), 'live: 첫 단어 = 종목명, 확인 답장');
+  ok(interpret('취소 샘플전자').kind === 'cancel' && interpret('취소').name === null, 'live: 취소 명령');
+  ok(interpret('안녕하세요 오늘 방송').kind === 'ignore' && interpret('샘플전자 매수').kind === 'ignore', 'live: 콜 형식이 아니면 무시');
+  ok(interpret('샘플전자 매수 손절 없음').kind === 'call' && !interpret('샘플전자 매수 손절 없음').parsed.ok, 'live: 손절·목표 없으면 기록하되 검증 제외');
+}
+
+{
+  // 일봉: 장 마감(15:20 KST) 이후 게시된 현재가 매수 → 그날 종가 체결 불가, 다음 거래일 시가 체결
+  const D = 86400;
+  const T1 = Date.UTC(2025, 0, 6) / 1000 - 9 * 3600; // KST 00:00
+  const bars = Array.from({ length: 10 }, (_, i) => [T1 + i * D, 1000, 1010, 990, 1000]);
+  bars[3] = [T1 + 3 * D, 1000, 1050, 995, 1020]; // 게시일 종가 1020
+  bars[4] = [T1 + 4 * D, 1030, 1100, 1025, 1090]; // 다음 날 시가 1030
+  const call = { id: 't', market: 'KRX', entryMode: 'MARKET', entry: null, sl: 960, tps: [{ price: 1200, weight: 1 }], horizonDays: 14, stopBasis: 'TOUCH', stopHours: null };
+  const late = simulate({ ...call, tPost: T1 + 3 * D + 16 * 3600 }, bars, D, RULES, zero); // 16:00 KST
+  ok(late.status === 'FILLED' && late.mode === 'MARKET' && late.pf === 1030 && late.tFill === T1 + 4 * D, '일봉·장 마감 후 현재가 매수 → 다음 날 시가 체결');
+  const early = simulate({ ...call, tPost: T1 + 3 * D + 14 * 3600 }, bars, D, RULES, zero); // 14:00 KST
+  ok(early.mode === 'MARKET_CLOSE' && early.pf === 1020, '일봉·장중 현재가 매수 → 당일 종가 체결(기존 규칙 유지)');
+  // 마감 후 지정가: 기준가는 그날 종가(1020) → 1000 은 아래(LIMIT). 다음 날 저가 1025 미도달, 그다음 날 저가 990 → 체결
+  const lim = simulate({ ...call, entryMode: 'PRICE', entry: 1000, tPost: T1 + 3 * D + 16 * 3600 }, bars, D, RULES, zero);
+  ok(lim.mode === 'LIMIT' && lim.pf === 1000 && lim.tFill === T1 + 5 * D, '일봉·장 마감 후 지정가 → 기준가는 그날 종가, 이틀 뒤 체결');
+}
+
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail ? 1 : 0);

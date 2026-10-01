@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { sessionTokenFor, verifyIngestKey, verifyPassword, verifySession } from '@/lib/calls/auth';
+import { isSiteKey, resolveIngestNamespace, sessionTokenFor, siteNamespace, verifyIngestKey, verifyPassword, verifySession } from '@/lib/calls/auth';
 import { loadHistory, loadLatest, saveSnapshot, toHistoryEntry, upsertHistory, validateSnapshot } from '@/lib/calls/store';
 import { estimateWeeksToTarget } from '@/components/calls/verdict-card';
 import type { HistoryEntry, Snapshot, StatsOut } from '@/types/calls';
@@ -44,6 +44,22 @@ describe('calls auth', () => {
     expect(verifySession('')).toBe(false);
     expect(verifyIngestKey('short')).toBe(false);
   });
+  it('비밀 주소 키: 40~64자 16진수만 인정하고, 해시로 저장 위치를 정한다', () => {
+    const key = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718';
+    expect(isSiteKey(key)).toBe(true);
+    expect(isSiteKey(key.slice(0, 39))).toBe(false);
+    expect(isSiteKey(key.toUpperCase())).toBe(false);
+    expect(isSiteKey('k'.repeat(48))).toBe(false);
+    expect(siteNamespace(key)).toMatch(/^[0-9a-f]{32}$/);
+    expect(siteNamespace(key)).toBe(siteNamespace(key));
+    expect(siteNamespace(key)).not.toBe(siteNamespace(key.replace(/0/g, '1')));
+    // 환경변수 키면 기본 위치(undefined), 비밀 주소 키면 해시, 그 외는 거부(null)
+    process.env.CALLS_INGEST_KEY = 'k'.repeat(32);
+    expect(resolveIngestNamespace('k'.repeat(32))).toBeUndefined();
+    expect(resolveIngestNamespace(key)).toBe(siteNamespace(key));
+    expect(resolveIngestNamespace('nope')).toBeNull();
+    expect(resolveIngestNamespace(null)).toBeNull();
+  });
 });
 
 describe('calls store (파일 백엔드)', () => {
@@ -60,6 +76,17 @@ describe('calls store (파일 백엔드)', () => {
     expect(h.map((x) => `${x.week}:${x.filled}`)).toEqual(['2026-W40:9', '2026-W41:13']);
     expect((await loadLatest())?.stats.A.filled).toBe(13);
     expect((await loadHistory()).length).toBe(2);
+  });
+  it('비밀 주소 네임스페이스별로 따로 저장되고 기본 위치와 섞이지 않는다', async () => {
+    const ns1 = siteNamespace('a'.repeat(48));
+    const ns2 = siteNamespace('b'.repeat(48));
+    await saveSnapshot(snap({ week: '2026-W40' }), ns1);
+    await saveSnapshot(snap({ week: '2026-W41' }), ns1);
+    await saveSnapshot(snap({ week: '2026-W39' }), ns2);
+    expect(await loadLatest()).toBeNull();
+    expect((await loadLatest(ns1))?.week).toBe('2026-W41');
+    expect((await loadHistory(ns1)).map((h) => h.week)).toEqual(['2026-W40', '2026-W41']);
+    expect((await loadHistory(ns2)).map((h) => h.week)).toEqual(['2026-W39']);
   });
   it('validateSnapshot 은 형식이 다르면 거부한다', () => {
     expect(validateSnapshot(snap())).toBe(true);

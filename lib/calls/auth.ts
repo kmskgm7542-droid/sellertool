@@ -39,3 +39,21 @@ export function verifyIngestKey(header: string | null | undefined): boolean {
   if (!key || key.length < 16 || !header) return false;
   return safeEqual(header, key);
 }
+
+// ── 비밀 주소 방식(환경변수 없이 쓰는 기본 방식) ──
+// PC의 setup_site.bat 이 만든 48자 16진수 키 하나가 업로드 키이자 보기 주소(/calls/<키>)다.
+// 서버는 키를 저장하지 않고, 키의 해시로 저장 위치(네임스페이스)만 정한다. 키를 아는 사람만 올리고 볼 수 있다.
+export function isSiteKey(key: string | null | undefined): key is string {
+  return typeof key === 'string' && /^[0-9a-f]{40,64}$/.test(key);
+}
+
+export function siteNamespace(key: string): string {
+  return createHash('sha256').update(`calls-site-v1|${key}`).digest('hex').slice(0, 32);
+}
+
+// 요청 헤더의 키 → 저장 네임스페이스. 환경변수 키(옛 방식)면 기본 위치(undefined), 비밀 주소 키면 그 해시, 아니면 null(거부).
+export function resolveIngestNamespace(header: string | null | undefined): string | undefined | null {
+  if (verifyIngestKey(header)) return undefined;
+  if (isSiteKey(header)) return siteNamespace(header);
+  return null;
+}

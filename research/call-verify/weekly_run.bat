@@ -1,5 +1,7 @@
 @echo off
 chcp 65001 >nul
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
 cd /d "%~dp0"
 if not exist data mkdir data
 set "LOG=data\weekly.log"
@@ -16,10 +18,17 @@ python -u yt_posts.py >> "%LOG%" 2>&1
 python -u tg_collect.py >> "%LOG%" 2>&1
 "%NODE%" run.mjs parse data\yt_result.json >> "%LOG%" 2>&1
 "%NODE%" run.mjs merge >> "%LOG%" 2>&1
+"%NODE%" live.mjs --once >> "%LOG%" 2>&1
+if exist data\live_calls.json (
+  "%NODE%" run.mjs parse data\live_calls.json >> "%LOG%" 2>&1
+  "%NODE%" run.mjs merge >> "%LOG%" 2>&1
+)
 python -u fetch_prices.py >> "%LOG%" 2>&1
 "%NODE%" run.mjs sim >> "%LOG%" 2>&1
+"%NODE%" report_html.mjs >> "%LOG%" 2>&1
 if exist data\site.json python -u publish.py >> "%LOG%" 2>&1
 python -u notify.py >> "%LOG%" 2>&1
+python -u export_drive.py >> "%LOG%" 2>&1
 echo [%date% %time%] weekly_run 끝 >> "%LOG%"
 exit /b 0
 

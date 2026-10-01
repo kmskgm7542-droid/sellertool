@@ -7,6 +7,10 @@ import type { HistoryEntry, Snapshot } from '@/types/calls';
 const LATEST = 'call-verify/latest.json';
 const HISTORY = 'call-verify/history.json';
 
+// 비밀 주소 방식은 키의 해시(ns)별로 따로 저장한다. ns 가 없으면 옛 방식(환경변수 키)의 기본 위치.
+const latestKey = (ns?: string) => (ns ? `call-verify/sites/${ns}/latest.json` : LATEST);
+const historyKey = (ns?: string) => (ns ? `call-verify/sites/${ns}/history.json` : HISTORY);
+
 export class StoreNotConfigured extends Error {
   constructor() {
     super('저장소가 연결되지 않았습니다. Vercel 프로젝트에 Blob 저장소를 연결하세요(BLOB_STORE_ID 또는 BLOB_READ_WRITE_TOKEN).');
@@ -72,13 +76,13 @@ export function isStoreConfigured(): boolean {
   return Boolean(process.env.CALLS_STORE_DIR) || hasBlobCredentials();
 }
 
-export async function loadLatest(): Promise<Snapshot | null> {
-  const raw = await getBackend().read(LATEST);
+export async function loadLatest(ns?: string): Promise<Snapshot | null> {
+  const raw = await getBackend().read(latestKey(ns));
   return raw ? (JSON.parse(raw) as Snapshot) : null;
 }
 
-export async function loadHistory(): Promise<HistoryEntry[]> {
-  const raw = await getBackend().read(HISTORY);
+export async function loadHistory(ns?: string): Promise<HistoryEntry[]> {
+  const raw = await getBackend().read(historyKey(ns));
   return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
 }
 
@@ -104,14 +108,14 @@ export function upsertHistory(history: HistoryEntry[], entry: HistoryEntry): His
   return [...rest, entry].sort((x, y) => x.week.localeCompare(y.week)).slice(-260);
 }
 
-export async function saveSnapshot(s: Snapshot): Promise<HistoryEntry[]> {
+export async function saveSnapshot(s: Snapshot, ns?: string): Promise<HistoryEntry[]> {
   const be = getBackend();
   const history = upsertHistory(
-    ((await be.read(HISTORY).then((r) => (r ? JSON.parse(r) : []))) as HistoryEntry[]),
+    ((await be.read(historyKey(ns)).then((r) => (r ? JSON.parse(r) : []))) as HistoryEntry[]),
     toHistoryEntry(s),
   );
-  await be.write(LATEST, JSON.stringify(s));
-  await be.write(HISTORY, JSON.stringify(history));
+  await be.write(latestKey(ns), JSON.stringify(s));
+  await be.write(historyKey(ns), JSON.stringify(history));
   return history;
 }
 
