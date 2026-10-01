@@ -4,6 +4,7 @@
         python notify.py "문장"     → 문장만 전송(테스트)
 """
 import json
+import shutil
 import sys
 import urllib.parse
 import urllib.request
@@ -27,13 +28,13 @@ def send_text(c, text):
         return json.loads(r.read())["ok"]
 
 
-def send_file(c, path, caption=""):
+def send_file(c, path, caption="", content_type="text/plain"):
     boundary = "----callverify"
     data = path.read_bytes()
     parts = [
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"chat_id\"\r\n\r\n{c['chat_id']}\r\n",
         f"--{boundary}\r\nContent-Disposition: form-data; name=\"caption\"\r\n\r\n{caption}\r\n",
-        f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{path.name}\"\r\nContent-Type: text/plain\r\n\r\n",
+        f"--{boundary}\r\nContent-Disposition: form-data; name=\"document\"; filename=\"{path.name}\"\r\nContent-Type: {content_type}\r\n\r\n",
     ]
     body = "".join(parts).encode("utf-8") + data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(
@@ -57,13 +58,26 @@ def main():
     site = DATA / "site.json"
     if site.exists():
         try:
-            text += "\n\n🔗 " + json.loads(site.read_text("utf-8"))["url"].rstrip("/") + "/calls"
+            s = json.loads(site.read_text("utf-8"))
+            base = s["url"].rstrip("/")
+            text += "\n\n🔗 성적표 웹: " + (base + "/calls" if s.get("mode") == "password" else f"{base}/calls/{s['key']}")
         except Exception:
             pass
     print("성적표 전송:", send_text(c, text))
+    # 성적표 파일(판정·자산 곡선·콜 목록) — 파일을 누르면 휴대폰·PC 브라우저에서 바로 열린다. 호스팅·로그인 불필요.
+    html = DATA / "report.html"
+    if html.exists():
+        week = ""
+        try:
+            week = json.loads((DATA / "results.json").read_text("utf-8")).get("week", "")
+        except Exception:
+            pass
+        named = DATA / f"성적표_{week or 'latest'}.html"
+        shutil.copyfile(html, named)
+        print("성적표 파일 첨부:", send_file(c, named, "📊 성적표 — 파일을 눌러 브라우저로 열기", "text/html"))
     report = DATA / "report.md"
     if report.exists():
-        print("보고서 첨부:", send_file(c, report, "콜 검증 상세 보고서"))
+        print("보고서 첨부:", send_file(c, report, "콜 검증 상세 보고서(텍스트)"))
 
 
 if __name__ == "__main__":

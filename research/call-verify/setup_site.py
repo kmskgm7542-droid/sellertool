@@ -1,5 +1,6 @@
-"""성적표 웹페이지 연결 — 주소와 업로드 키를 data/site.json 에 저장하고 연결을 확인한다.
-업로드 키는 여기서 만들어 보여주며, 같은 값을 Vercel 환경변수 CALLS_INGEST_KEY 에 넣어야 한다.
+"""성적표 웹페이지 연결 — 비밀 주소 방식(Vercel 설정 불필요).
+48자 비밀 키를 만들어 data/site.json 에 저장한다. 이 키가 업로드 키이자 보기 주소(/calls/<키>)다.
+키를 아는 사람만 올리고 볼 수 있으므로 주소를 남에게 보내지 않는다. 주소를 잊으면 이 파일을 다시 실행하면 같은 주소를 보여준다.
 """
 import json
 import secrets
@@ -24,18 +25,23 @@ if not url.startswith("http"):
 
 key = old.get("key") or secrets.token_hex(24)
 if old.get("key"):
-    print("업로드 키는 기존 값을 유지합니다. (새로 만들려면 data\\site.json 을 지우고 다시 실행)")
-CFG.write_text(json.dumps({"url": url, "key": key}, indent=1), "utf-8")
+    print("비밀 키는 기존 값을 유지합니다. (새 주소를 원하면 data\\site.json 을 지우고 다시 실행)")
+cfg = {"url": url, "key": key}
+if old.get("mode") == "password":  # 옛 비밀번호 방식을 쓰던 설정은 그대로 둔다
+    cfg["mode"] = "password"
+CFG.write_text(json.dumps(cfg, indent=1), "utf-8")
 
+view = url + "/calls" if cfg.get("mode") == "password" else f"{url}/calls/{key}"
 print()
-print("=== Vercel 에 넣을 값 (프로젝트 → Settings → Environment Variables) ===")
-print("  CALLS_INGEST_KEY =", key)
-print("  CALLS_PASSWORD   = (대표님이 정한 페이지 비밀번호)")
-print("  + Storage 탭에서 Blob 저장소 만들기 → Connect (BLOB_STORE_ID 자동 등록)")
-print("  넣은 뒤 Deployments → 최신 배포 → Redeploy")
+print("=== 성적표 주소 (휴대폰·PC 브라우저에 즐겨찾기) ===")
+print("  ", view)
+print("  이 주소를 아는 사람만 볼 수 있습니다. 남에게 보내지 마세요.")
 print()
-input("위 설정을 마쳤으면 Enter (아직이면 창을 닫고 나중에 setup_site.bat 을 다시 실행)...")
 r = subprocess.run([sys.executable, str(HERE / "publish.py"), "--check"])
 if r.returncode == 0 and (DATA / "results.json").exists():
     subprocess.run([sys.executable, str(HERE / "publish.py")])
+elif r.returncode == 0:
+    print("아직 성적표 데이터가 없습니다. weekly_run.bat 을 한 번 실행하면 첫 성적표가 올라갑니다.")
+print()
+input("Enter 를 누르면 닫힙니다...")
 sys.exit(r.returncode)

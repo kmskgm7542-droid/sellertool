@@ -4,38 +4,20 @@ import { isConfigured, SESSION_COOKIE, verifySession } from '@/lib/calls/auth';
 import { isStoreConfigured, loadHistory, loadLatest } from '@/lib/calls/store';
 import type { HistoryEntry, Snapshot } from '@/types/calls';
 import LoginForm from '@/components/calls/login-form';
-import TopBanner from '@/components/calls/top-banner';
-import VerdictCard from '@/components/calls/verdict-card';
-import EquityChart from '@/components/calls/equity-chart';
-import HistoryTable from '@/components/calls/history-table';
-import CallsTable from '@/components/calls/calls-table';
-import OpenPositions from '@/components/calls/open-positions';
-import GroupTable from '@/components/calls/group-table';
-import RulesPanel from '@/components/calls/rules-panel';
+import Dashboard, { Notice } from '@/components/calls/dashboard';
 
-function Notice({ title, body }: { title: string; body: string }) {
-  return (
-    <main className="mx-auto w-full max-w-md px-4 py-16">
-      <h1 className="text-lg font-bold">{title}</h1>
-      <p className="mt-2 whitespace-pre-line text-sm text-muted-foreground">{body}</p>
-    </main>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border border-border bg-card p-4">
-      <h2 className="mb-2 text-base font-semibold">{title}</h2>
-      {children}
-    </section>
-  );
-}
-
+// 옛 방식(비밀번호 보호). 환경변수 CALLS_PASSWORD·CALLS_INGEST_KEY 가 있을 때만 동작한다.
+// 기본 방식은 비밀 주소 /calls/<키> (환경변수 불필요) — app/calls/[key]/page.tsx
 export default async function CallsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   // 항상 요청 시점에 렌더링(환경변수·저장소 상태를 빌드 시점에 굳히지 않는다)
   await connection();
   if (!isConfigured()) {
-    return <Notice title="설정이 필요합니다" body={'Vercel 환경변수 CALLS_PASSWORD, CALLS_INGEST_KEY 를 넣고 다시 배포하세요.'} />;
+    return (
+      <Notice
+        title="비밀 주소로 열어 주세요"
+        body={'이 페이지는 PC의 setup_site.bat 이 알려주는 주소(/calls/긴코드)로 봅니다.\n주소를 잊었으면 PC에서 setup_site.bat 을 다시 실행하면 같은 주소를 다시 보여줍니다.'}
+      />
+    );
   }
   const store = await cookies();
   if (!verifySession(store.get(SESSION_COOKIE)?.value)) {
@@ -56,47 +38,5 @@ export default async function CallsPage({ searchParams }: { searchParams: Promis
   if (!s) {
     return <Notice title="아직 올라온 성적표가 없습니다" body={'PC에서 setup_site.bat 로 연결한 뒤 weekly_run.bat 을 한 번 실행하면 여기에 표시됩니다.'} />;
   }
-
-  return (
-    <>
-      <TopBanner generatedAt={s.generatedAt} week={s.week} />
-      <main className="mx-auto flex w-full max-w-3xl flex-col gap-4 px-4 py-4">
-        <VerdictCard s={s} history={history} />
-        <Section title="자산 곡선">
-          <EquityChart A={s.equity.A} B={s.equity.B} />
-        </Section>
-        <Section title="주차별 추이">
-          <HistoryTable history={history} />
-        </Section>
-        <Section title={`보유중 (${s.calls.filter((c) => c.status === 'OPEN').length})`}>
-          <OpenPositions calls={s.calls} asOf={Date.parse(s.generatedAt) / 1000} />
-        </Section>
-        <Section title={`콜 목록 (대상 ${s.counts.usable} · 원장 ${s.counts.ledger})`}>
-          <CallsTable calls={s.calls} />
-        </Section>
-        <Section title="시장별">
-          <GroupTable groups={s.byMarket} />
-        </Section>
-        <Section title="채널별">
-          <GroupTable groups={s.byChannel} labels={{}} />
-        </Section>
-        <Section title={`검토 필요 (${s.pending.length})`}>
-          {s.pending.length ? (
-            <ul className="text-xs sm:text-sm">
-              {s.pending.map((p) => (
-                <li key={p.id} className="border-t border-border py-1 first:border-0">
-                  <span className="text-muted-foreground">{p.t}</span> {p.name} <span className="text-muted-foreground">— {p.why}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">없음</p>
-          )}
-          <p className="mt-2 text-xs text-muted-foreground">목표가·종목이 없는 콜은 원장에 넣지 않는다. 채널이 보완하면 다음 주 자동 반영.</p>
-        </Section>
-        <RulesPanel rules={s.rules} />
-        <p className="pb-6 text-center text-xs text-muted-foreground">본인 검증용 · 재배포 금지 · 콜 원문은 저장하지 않음</p>
-      </main>
-    </>
-  );
+  return <Dashboard s={s} history={history} />;
 }

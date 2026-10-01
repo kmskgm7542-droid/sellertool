@@ -60,11 +60,13 @@ yt_posts.py → tg_collect.py → run.mjs parse data/yt_result.json → run.mjs 
 
 김이사(클라우드)가 PC 파일을 직접 읽을 수 없으므로, 배치가 끝날 때 **검토용 파일만** 대표 드라이브의 `call-verify-sync` 폴더로 보낸다(자막·추출 결과·원장·성적표·로그). 토큰·세션·키 파일은 보내지 않는다. 방법은 둘 중 자동 선택: (1) 드라이브 데스크톱의 `내 드라이브\call-verify-sync` 폴더가 있으면 복사(`export_drive.py`), (2) 없으면 유튜브 수집기와 같은 로그인 브라우저로 드라이브 웹에 직접 업로드(`drive_upload.py`, 폴더 ID 고정, 파일명 앞에 시각 접두어). 김이사는 Google Drive 연결로 이 폴더를 읽어 평일 22:12 자동 검토(추출 정확도·누락·오추출)를 남긴다.
 
-### 성적표 웹페이지 (`/calls`, 비밀번호 보호)
+### 성적표 웹페이지 (`/calls/<비밀키>`, 비밀 주소 방식)
 
-`run.mjs sim` 이 `data/results.json`(웹용 스냅샷, 콜 원문 없음)을 만들고, `publish.py` 가 셀러툴 앱의 `POST /api/calls/ingest` 로 올린다. 서버는 Vercel Blob **비공개** 블롭에 최신본과 주차별 요약을 저장하고, `/calls` 페이지는 비밀번호(쿠키 30일) 뒤에서 판정 카드·자산 곡선·주차 추이·콜 목록·보유중·채널별·검토 필요·규칙을 보여준다. 색인 금지(noindex).
+`run.mjs sim` 이 `data/results.json`(웹용 스냅샷, 콜 원문 없음)을 만들고, `publish.py` 가 셀러툴 앱의 `POST /api/calls/ingest` 로 올린다. 서버는 Vercel Blob **비공개** 블롭에 최신본과 주차별 요약을 저장하고, 페이지는 판정 카드·자산 곡선·주차 추이·콜 목록·보유중·채널별·검토 필요·규칙을 보여준다. 색인 금지(noindex).
 
-1회 설정: Vercel 프로젝트에 환경변수 `CALLS_PASSWORD`(페이지 비밀번호), `CALLS_INGEST_KEY`(업로드 키) 와 Blob 저장소 연결(`BLOB_STORE_ID` 또는 `BLOB_READ_WRITE_TOKEN` 자동 등록) → Redeploy → PC에서 `setup_site.bat`(주소·키를 `data/site.json` 에 저장, 연결 확인, 첫 업로드). 이후 `weekly_run.bat` 이 매주 자동 업로드하고 텔레그램 성적표에 링크를 붙인다. 코드: `app/calls`, `app/api/calls/ingest`, `lib/calls`, `components/calls`, 테스트 `__tests__/calls.test.ts`.
+1회 설정(PC에서만): `setup_site.bat` → Enter(주소 기본값) → 48자 비밀 키를 만들어 `data/site.json` 에 저장하고 **성적표 주소 `https://sellertool.vercel.app/calls/<키>`** 를 보여준다. 이 키가 업로드 키이자 보기 주소다. 서버는 키를 저장하지 않고 키의 해시로 저장 위치만 정하므로, 주소를 아는 사람만 올리고 볼 수 있다. Vercel 쪽 환경변수는 필요 없다(Blob 저장소 연결만 있으면 됨). 이후 `weekly_run.bat` 이 매주 자동 업로드하고 텔레그램 성적표에 주소를 붙인다. 성적표 HTML 파일(`report.html`)도 함께 만들어 텔레그램으로 보낸다(오프라인 보관용).
+
+옛 방식(비밀번호 보호 `/calls`)은 환경변수 `CALLS_PASSWORD`·`CALLS_INGEST_KEY` 를 넣고 `site.json` 에 `"mode": "password"` 를 적으면 그대로 쓸 수 있다. 코드: `app/calls`, `app/calls/[key]`, `app/api/calls/ingest`, `lib/calls`, `components/calls`, 테스트 `__tests__/calls.test.ts`.
 
 ## 수동 흐름 (클라우드 또는 PC 개별 실행)
 
@@ -143,3 +145,4 @@ A안은 처음 제시된 목표가·손절가를 그대로 적용한다. B안(�
 - 공개 채널(생존투자 정보알림채널) 사진 1,074장 점검: 표본 24장 전부 차트·썸네일이라 과거 콜 날짜 복원에 쓸 수 없음. 전향적 수집만 유효.
 - 방송 자막 수집 보정(`yt_live.py`): 스크립트 패널을 화면에서 읽는 보조 경로가 문장 대신 "3분 57초" 같은 시각 표시만 저장하던 문제. 시각 줄을 걸러 읽고, 시각 표시만 든 자막 파일은 자동으로 지워 다시 받는다(추출 상태도 함께 초기화). 드라이브 업로드는 빠진 파일을 확인해 최대 3회 다시 올린다(`drive_upload.py`). 규칙 변경 없음.
 - 자막 자동추출 규칙 v2(`extract_rules.mjs`): 9/18~9/30 방송 8개 대조 결과 16건 중 14건이 오탐(시황·과거 복기·"보라"/"리스크" 같은 일상어)이어서 조임. 이름 자막 앞뒤 약 -15초~+40초 안에 명시적 매수 표현(현재가 매수·매수 가능·사도 돼요 등)이 있고 복기·보유 표현(익절·먹었·잡아 드렸·홀딩 등)이 없을 때만 후보. 일상어와 같은 코인 이름은 '코인'이 함께 나올 때만 종목으로 봄. "N원 … 이탈하면" 말투를 손절로 해석. 규칙 버전이 바뀌면 예전 자동추출 기록을 지우고 전체 자막을 다시 뽑는다(직접 기록·취소는 유지). 검증 규칙(진입·손절·목표·기간) 변경 없음.
+- 성적표 웹페이지를 비밀 주소 방식(`/calls/<48자 키>`)으로 바꿈. Vercel 환경변수 입력이 어렵다는 대표 피드백. 키 해시별 저장(`call-verify/sites/<해시>/`), 옛 비밀번호 방식은 유지. 성적표 HTML 파일(`report_html.mjs`)을 텔레그램으로도 보냄. 규칙 변경 없음.
