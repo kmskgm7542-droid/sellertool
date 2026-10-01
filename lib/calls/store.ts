@@ -86,10 +86,17 @@ export async function loadHistory(ns?: string): Promise<HistoryEntry[]> {
   return raw ? (JSON.parse(raw) as HistoryEntry[]) : [];
 }
 
+// 생성 시각(UTC ISO) → KST 날짜 "YYYY-MM-DD"
+export function kstDay(iso: string): string {
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? iso.slice(0, 10) : new Date(t + 9 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 export function toHistoryEntry(s: Snapshot): HistoryEntry {
   const a = s.stats.A;
   return {
     week: s.week,
+    day: kstDay(s.generatedAt),
     generatedAt: s.generatedAt,
     usable: s.counts.usable,
     filled: a.filled,
@@ -102,10 +109,11 @@ export function toHistoryEntry(s: Snapshot): HistoryEntry {
   };
 }
 
-// 같은 주차는 덮어쓴다(주간 배치를 두 번 돌려도 한 줄).
+// 하루 한 줄: 같은 날짜는 덮어쓴다(하루에 두 번 돌려도 한 줄). day 가 없는 옛 기록은 주차 단위로 유지.
+const histKey = (h: HistoryEntry) => h.day ?? h.week;
 export function upsertHistory(history: HistoryEntry[], entry: HistoryEntry): HistoryEntry[] {
-  const rest = history.filter((h) => h.week !== entry.week);
-  return [...rest, entry].sort((x, y) => x.week.localeCompare(y.week)).slice(-260);
+  const rest = history.filter((h) => histKey(h) !== histKey(entry));
+  return [...rest, entry].sort((x, y) => histKey(x).localeCompare(histKey(y))).slice(-400);
 }
 
 export async function saveSnapshot(s: Snapshot, ns?: string): Promise<HistoryEntry[]> {

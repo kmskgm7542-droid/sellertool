@@ -188,8 +188,10 @@ function main() {
   let history = [];
   try { history = JSON.parse(fs.readFileSync(HIST, 'utf8')); } catch { /* 처음 */ }
   const a = s.stats.A;
-  const entry = { week: s.week, generatedAt: s.generatedAt, usable: s.counts.usable, filled: a.filled, winRate: a.winRate, meanR: a.meanR, t: a.t, pf: a.pf, mdd: a.mdd, verdict: a.verdict };
-  history = [...history.filter((h) => h.week !== s.week), entry].sort((p, q) => p.week.localeCompare(q.week));
+  const day = new Date(Date.parse(s.generatedAt) + 9 * 3600 * 1000).toISOString().slice(0, 10); // KST 날짜 — 하루 한 줄
+  const entry = { week: s.week, day, generatedAt: s.generatedAt, usable: s.counts.usable, filled: a.filled, winRate: a.winRate, meanR: a.meanR, t: a.t, pf: a.pf, mdd: a.mdd, verdict: a.verdict };
+  const keyOf = (h) => h.day ?? h.week;
+  history = [...history.filter((h) => keyOf(h) !== day), entry].sort((p, q) => keyOf(p).localeCompare(keyOf(q))).slice(-400);
   fs.writeFileSync(HIST, JSON.stringify(history, null, 1));
   fs.writeFileSync(OUT, render(s, history), 'utf8');
   console.log(`성적표 HTML → ${OUT} (${(fs.statSync(OUT).size / 1024).toFixed(0)}KB, 주차 누적 ${history.length}개)`);

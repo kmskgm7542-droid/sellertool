@@ -45,8 +45,45 @@ def send_file(c, path, caption="", content_type="text/plain"):
         return json.loads(r.read())["ok"]
 
 
+def site_link():
+    site = DATA / "site.json"
+    if not site.exists():
+        return ""
+    try:
+        s = json.loads(site.read_text("utf-8"))
+        base = s["url"].rstrip("/")
+        return base + "/calls" if s.get("mode") == "password" else f"{base}/calls/{s['key']}"
+    except Exception:
+        return ""
+
+
+def daily_line():
+    """일간 갱신 한 줄: 결과 파일(results.json)에서 핵심 수치만."""
+    f = DATA / "results.json"
+    if not f.exists():
+        return None
+    s = json.loads(f.read_text("utf-8"))
+    a = s["stats"]["A"]
+    fx = lambda x, d=2: "-" if not isinstance(x, (int, float)) else f"{x:.{d}f}"  # noqa: E731
+    pc = lambda x: "-" if not isinstance(x, (int, float)) else f"{x * 100:.1f}%"  # noqa: E731
+    open_n = sum(1 for c in s.get("calls", []) if c.get("status") == "OPEN")
+    pend = len(s.get("pending", []))
+    text = (f"📅 일간 갱신 {s.get('generatedAt', '')[:10]} · {a.get('verdict', '')}\n"
+            f"체결 {a.get('filled', 0)}건 · 승률 {pc(a.get('winRate'))} · 평균 {fx(a.get('meanR'))}R · PF {fx(a.get('pf'))} · MDD {pc(a.get('mdd'))} · 보유중 {open_n}건"
+            + (f" · 검토 필요 {pend}건" if pend else ""))
+    link = site_link()
+    return text + (f"\n🔗 {link}" if link else "")
+
+
 def main():
     c = cfg()
+    if "--daily" in sys.argv:
+        line = daily_line()
+        if not line:
+            print("data/results.json 이 없어 일간 갱신 메시지를 보내지 않습니다.")
+            return
+        print("일간 갱신 전송:", send_text(c, line))
+        return
     if len(sys.argv) > 1:
         print("전송:", send_text(c, sys.argv[1]))
         return
@@ -55,14 +92,9 @@ def main():
         print("data/summary.txt 가 없습니다. 먼저 node run.mjs sim 을 실행하세요.")
         sys.exit(1)
     text = summary.read_text("utf-8")
-    site = DATA / "site.json"
-    if site.exists():
-        try:
-            s = json.loads(site.read_text("utf-8"))
-            base = s["url"].rstrip("/")
-            text += "\n\n🔗 성적표 웹: " + (base + "/calls" if s.get("mode") == "password" else f"{base}/calls/{s['key']}")
-        except Exception:
-            pass
+    link = site_link()
+    if link:
+        text += "\n\n🔗 성적표 웹: " + link
     print("성적표 전송:", send_text(c, text))
     # 성적표 파일(판정·자산 곡선·콜 목록) — 파일을 누르면 휴대폰·PC 브라우저에서 바로 열린다. 호스팅·로그인 불필요.
     html = DATA / "report.html"

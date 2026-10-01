@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { isSiteKey, resolveIngestNamespace, sessionTokenFor, siteNamespace, verifyIngestKey, verifyPassword, verifySession } from '@/lib/calls/auth';
-import { loadHistory, loadLatest, saveSnapshot, toHistoryEntry, upsertHistory, validateSnapshot } from '@/lib/calls/store';
+import { kstDay, loadHistory, loadLatest, saveSnapshot, toHistoryEntry, upsertHistory, validateSnapshot } from '@/lib/calls/store';
 import { estimateWeeksToTarget } from '@/components/calls/verdict-card';
 import type { HistoryEntry, Snapshot, StatsOut } from '@/types/calls';
 
@@ -68,21 +68,25 @@ describe('calls store (파일 백엔드)', () => {
   beforeEach(() => { dir = mkdtempSync(path.join(tmpdir(), 'calls-')); process.env = { ...env, CALLS_STORE_DIR: dir }; });
   afterEach(() => { rmSync(dir, { recursive: true, force: true }); process.env = env; });
 
-  it('스냅샷을 저장하고 최신본·주차 이력을 읽는다. 같은 주차는 덮어쓴다', async () => {
+  it('스냅샷을 저장하고 최신본·날짜별 이력을 읽는다. 같은 날은 덮어쓴다', async () => {
     expect(await loadLatest()).toBeNull();
     await saveSnapshot(snap());
-    await saveSnapshot(snap({ week: '2026-W41', stats: { A: stats({ filled: 12 }), B: stats() } }));
-    const h = await saveSnapshot(snap({ week: '2026-W41', stats: { A: stats({ filled: 13 }), B: stats() } }));
-    expect(h.map((x) => `${x.week}:${x.filled}`)).toEqual(['2026-W40:9', '2026-W41:13']);
+    await saveSnapshot(snap({ generatedAt: '2026-09-29T12:30:00.000Z', stats: { A: stats({ filled: 12 }), B: stats() } }));
+    const h = await saveSnapshot(snap({ generatedAt: '2026-09-29T13:00:00.000Z', stats: { A: stats({ filled: 13 }), B: stats() } }));
+    expect(h.map((x) => `${x.day}:${x.filled}`)).toEqual(['2026-09-28:9', '2026-09-29:13']);
     expect((await loadLatest())?.stats.A.filled).toBe(13);
     expect((await loadHistory()).length).toBe(2);
+  });
+  it('kstDay 는 UTC 시각을 한국 날짜로 바꾼다(자정 넘김 포함)', () => {
+    expect(kstDay('2026-09-28T04:48:00.000Z')).toBe('2026-09-28');
+    expect(kstDay('2026-09-28T15:30:00.000Z')).toBe('2026-09-29');
   });
   it('비밀 주소 네임스페이스별로 따로 저장되고 기본 위치와 섞이지 않는다', async () => {
     const ns1 = siteNamespace('a'.repeat(48));
     const ns2 = siteNamespace('b'.repeat(48));
-    await saveSnapshot(snap({ week: '2026-W40' }), ns1);
-    await saveSnapshot(snap({ week: '2026-W41' }), ns1);
-    await saveSnapshot(snap({ week: '2026-W39' }), ns2);
+    await saveSnapshot(snap({ week: '2026-W40', generatedAt: '2026-09-28T04:00:00.000Z' }), ns1);
+    await saveSnapshot(snap({ week: '2026-W41', generatedAt: '2026-10-05T04:00:00.000Z' }), ns1);
+    await saveSnapshot(snap({ week: '2026-W39', generatedAt: '2026-09-21T04:00:00.000Z' }), ns2);
     expect(await loadLatest()).toBeNull();
     expect((await loadLatest(ns1))?.week).toBe('2026-W41');
     expect((await loadHistory(ns1)).map((h) => h.week)).toEqual(['2026-W40', '2026-W41']);
@@ -94,9 +98,11 @@ describe('calls store (파일 백엔드)', () => {
     expect(validateSnapshot({ ...snap(), week: 'W40' })).toBe(false);
     expect(validateSnapshot('x')).toBe(false);
   });
-  it('upsertHistory 는 주차 순으로 정렬한다', () => {
-    const e = (week: string): HistoryEntry => ({ ...toHistoryEntry(snap({ week })) });
-    expect(upsertHistory([e('2026-W41'), e('2026-W39')], e('2026-W40')).map((x) => x.week)).toEqual(['2026-W39', '2026-W40', '2026-W41']);
+  it('upsertHistory 는 날짜 순으로 정렬하고, day 가 없는 옛 기록은 주차로 유지한다', () => {
+    const e = (day: string): HistoryEntry => ({ ...toHistoryEntry(snap({ generatedAt: `${day}T04:00:00.000Z` })) });
+    expect(upsertHistory([e('2026-10-03'), e('2026-10-01')], e('2026-10-02')).map((x) => x.day)).toEqual(['2026-10-01', '2026-10-02', '2026-10-03']);
+    const old: HistoryEntry = { ...toHistoryEntry(snap({ week: '2026-W39' })), day: undefined };
+    expect(upsertHistory([old], e('2026-10-01')).map((x) => x.day ?? x.week)).toEqual(['2026-10-01', '2026-W39'].sort());
   });
 });
 

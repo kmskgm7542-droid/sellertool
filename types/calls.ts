@@ -93,9 +93,10 @@ export interface Snapshot {
   rules: { RULES: Record<string, unknown>; COSTS: Record<string, unknown>; CRITERIA: Record<string, unknown> };
 }
 
-// 주차별 누적(가벼운 요약만). 저장소의 history.json.
+// 날짜별 누적(가벼운 요약만). 저장소의 history.json. day(KST YYYY-MM-DD)가 있으면 하루 한 줄, 없으면(옛 기록) 주차 한 줄.
 export interface HistoryEntry {
   week: string;
+  day?: string;
   generatedAt: string;
   usable: number;
   filled: number;
