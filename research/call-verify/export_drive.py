@@ -14,7 +14,8 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 CFG = DATA / "drive.json"
 FILES = ["live_calls.json", "ledger.csv", "results.json", "summary.txt", "report.md", "pending_review.txt",
-         "daily.log", "weekly.log", "live.log", "yt_live_run.log", "extract_run.log", "yt_live_state.json", "extract_state.json"]
+         "daily.log", "weekly.log", "live.log", "vod.log", "yt_live_run.log", "extract_run.log", "drive_upload_run.log",
+         "yt_live_state.json", "extract_state.json"]
 
 
 def find_drive_root():

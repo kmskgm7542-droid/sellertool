@@ -19,6 +19,15 @@ const STATE = path.join(DATA, 'extract_state.json');
 const CHANNEL = '방송(자동추출)';
 const BEFORE = 2; // 창: 이름이 나온 자막 앞 2구간
 const AFTER = 8; //     뒤 8구간(약 1~2분)
+const RULES_VERSION = 2; // 추출 규칙이 바뀌면 올린다 → 기존 자동추출 기록을 지우고 전체를 다시 뽑는다
+
+// 일상어와 같은 코인 이름 — "구간인지를 보라는 거지", "리스크를 줄이는" 처럼 말에 섞여 오탐이 잦다.
+// 같은 창 안에 '코인'이라는 말이 함께 나올 때만 종목으로 본다.
+const AMBIGUOUS = new Set(['보라', '리스크', '온도', '스토리', '무브', '오더', '메탈', '체인', '미나', '아크', '플로우', '알파', '샌드', '비전', '스택스', '세이', '수이', '월드', '니어', '갤러리', '퀀텀', '스팀', '마스크', '펀디', '썸씽', '밀크', '보스', '엘프', '온톨로지']);
+// 명시적 매수 표현 — 이름이 나온 자막과 바로 앞뒤 자막(약 ±15초) 안에 있어야 타점으로 본다
+const BUY_CUE = /(?:현재가|지금|여기서?|시장가|이\s*자리)\s*(?:에서\s*)?(?:매수|잡|사도|사세|사시|사면|들어가|진입)|매수\s*(?:가능|괜찮|해\s*볼|자리|포인트|구간|존|타이밍|같|가\s*봤|해도|관점)|잡아\s*(?:볼\s*만|도\s*(?:된|돼)|보세요)|들어가\s*(?:볼|도\s*(?:된|돼))|공략\s*(?:해\s*볼|가능|해도)|사도\s*(?:돼|되|됩)|사셔도|담아도|담아\s*볼/;
+// 복기·보유 관리 표현 — 같은 짧은 창에 있으면 새 매수 콜이 아니다(이미 산 것, 익절한 것, 예전에 잡아 드린 것)
+const PAST_CUE = /익절|입절|먹었|먹고\s*나|수익\s*났|도달|드렸|드린|잡았|잡아서|들어갔|팔았|탈출|털었|홀딩|보유|가지고\s*있|매도\s*시그널|추세\s*이탈|물려|본절/;
 
 const readJson = (f, d) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : d);
 const kst = (sec) => new Date((sec + 9 * 3600) * 1000).toISOString().replace('T', ' ').slice(5, 16);
@@ -49,6 +58,8 @@ export function normalizeSpeech(t) {
   return String(t)
     .replace(/\s+/g, ' ')
     .replace(/(사도\s*(?:돼|되|됩)\w*|사셔도|사세요|사시면|사시고|사면|사고요|사고|사는\s*거|사서|삽니다|살\s*만|담아|담으|담고|줍|매집|들어가(?:도|세요|면|시)|진입)/g, ' 매수 ')
+    // "78.6원 4시간 종가로 봤을 때 여기 이탈하면" → "78.6원 손절 4시간 종가로…" (가격과 '이탈하면' 사이에 기준 설명이 끼는 말투)
+    .replace(/(\d[\d.]*\s*(?:억|만|천)?\s*원?)\s+((?:[^\d]|\d+\s*(?:시간|분|일)\s*(?:봉|종가)?){0,40}?)\s*(깨지면|이탈하면|빠지면|무너지면|하회하면)/g, '$1 손절 $2 ')
     .replace(/(깨지면|이탈하면|빠지면|무너지면|하회하면|밑으로\s*가면)\s*(?:나가|매도|정리|손절|컷|던지)\w*/g, ' 손절 ')
     .replace(/(깨지면|이탈하면|빠지면|무너지면)/g, ' 손절 ')
     .replace(/(?:손절|컷|스탑)\s*(?:은|는|가|을|를)?\s*/g, ' 손절 ')
@@ -69,8 +80,17 @@ export function extractFromSegments(segs, nameRe, rules = RULES) {
     if (!m) continue;
     const raw = [...new Set(m)][0];
     const name = ALIASES[raw] ?? raw;
-    // 창: 앞 BEFORE·뒤 AFTER 구간. 단, 다른 종목 이름이 나오는 구간에서 자른다(두 종목의 손절·목표가 섞이지 않게)
+    // 다른 종목 이름이 나오는 자막인지(창을 거기서 자른다 — 두 종목의 매수 표현·손절·목표가 섞이지 않게)
     const other = (s) => { const mm = s.text.match(nameRe); return mm && mm.some((x) => (ALIASES[x] ?? x) !== name); };
+    // 짧은 창(이름 자막 앞 1·뒤 3구간, 약 -15초~+40초, 다른 종목에서 자름): 여기에 명시적 매수 표현이 있고 복기·보유 표현이 없어야 한다
+    let nlo = i;
+    while (nlo > Math.max(0, i - 1) && !other(segs[nlo - 1])) nlo--;
+    let nhi = i;
+    while (nhi < Math.min(segs.length - 1, i + 3) && !other(segs[nhi + 1])) nhi++;
+    const near = segs.slice(nlo, nhi + 1).map((s) => s.text).join(' ');
+    if (!BUY_CUE.test(near) || PAST_CUE.test(near)) continue;
+    if (AMBIGUOUS.has(raw) && !/코인/.test(near)) continue;
+    // 창: 앞 BEFORE·뒤 AFTER 구간. 단, 다른 종목 이름이 나오는 구간에서 자른다
     let lo = i;
     while (lo > Math.max(0, i - BEFORE) && !other(segs[lo - 1])) lo--;
     let hi = i;
@@ -104,6 +124,15 @@ async function main() {
   const state = readJson(STATE, { videos: {} });
   const live = readJson(FILE, { name: '방송(직접 기록)', messages: [] });
   if (!fs.existsSync(VOD)) { console.log('방송 자막 폴더가 없습니다(yt_live.py 먼저).'); return; }
+  // 규칙이 바뀌었으면 예전 규칙으로 뽑은 자동추출 기록을 지우고 모든 자막을 다시 뽑는다(직접 기록·취소는 그대로)
+  if ((state.rulesVersion ?? 1) !== RULES_VERSION) {
+    const before = live.messages.length;
+    live.messages = live.messages.filter((x) => x.channel !== CHANNEL);
+    console.log(`추출 규칙 v${RULES_VERSION} 적용: 예전 자동추출 ${before - live.messages.length}건을 지우고 전체 자막을 다시 뽑습니다.`);
+    state.videos = {};
+    state.rulesVersion = RULES_VERSION;
+    if (!dry) { fs.writeFileSync(FILE, JSON.stringify(live, null, 1)); fs.writeFileSync(STATE, JSON.stringify(state, null, 1)); }
+  }
   const todo = fs.readdirSync(VOD).filter((f) => f.endsWith('.json') && !state.videos[f.slice(0, -5)]);
   if (!todo.length) { console.log('새 방송 자막이 없습니다.'); return; }
   const summary = [];
