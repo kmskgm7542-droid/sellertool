@@ -138,6 +138,9 @@ async def main():
             else:
                 await page.goto(url, wait_until="domcontentloaded")
                 await page.wait_for_timeout(3000)
+        else:
+            from yt_login import check_and_alert  # 로그인이 풀렸으면 텔레그램으로 하루 한 번 알림
+            await check_and_alert(page, DATA, "게시판 수집")
 
         now = datetime.now(KST)
         seen_new = 0

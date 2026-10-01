@@ -20,6 +20,7 @@ HERE = Path(__file__).resolve().parent
 DATA = HERE / "data"
 sys.path.insert(0, str(HERE))
 from runlog import start as _start_log  # noqa: E402
+from yt_login import check_and_alert  # noqa: E402
 
 _start_log("yt_live", DATA)
 try:
@@ -483,6 +484,8 @@ async def main():
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
         await page.goto(base + "/streams", wait_until="domcontentloaded")
+        await page.wait_for_timeout(1500)
+        await check_and_alert(page, DATA, "방송 자막 수집")  # 로그인이 풀렸으면 텔레그램으로 하루 한 번 알림
         await page.wait_for_timeout(3000)
         videos = await list_streams(page)
         videos = videos[:MAX_VIDEOS]

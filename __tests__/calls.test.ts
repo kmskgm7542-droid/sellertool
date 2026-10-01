@@ -4,6 +4,7 @@ import path from 'node:path';
 import { isSiteKey, resolveIngestNamespace, sessionTokenFor, siteNamespace, verifyIngestKey, verifyPassword, verifySession } from '@/lib/calls/auth';
 import { kstDay, loadHistory, loadLatest, saveSnapshot, toHistoryEntry, upsertHistory, validateSnapshot } from '@/lib/calls/store';
 import { estimateWeeksToTarget } from '@/components/calls/verdict-card';
+import { periodStats } from '@/lib/calls/period';
 import type { HistoryEntry, Snapshot, StatsOut } from '@/types/calls';
 
 const stats = (over: Partial<StatsOut> = {}): StatsOut => ({
@@ -103,6 +104,27 @@ describe('calls store (파일 백엔드)', () => {
     expect(upsertHistory([e('2026-10-03'), e('2026-10-01')], e('2026-10-02')).map((x) => x.day)).toEqual(['2026-10-01', '2026-10-02', '2026-10-03']);
     const old: HistoryEntry = { ...toHistoryEntry(snap({ week: '2026-W39' })), day: undefined };
     expect(upsertHistory([old], e('2026-10-01')).map((x) => x.day ?? x.week)).toEqual(['2026-10-01', '2026-W39'].sort());
+  });
+});
+
+describe('periodStats', () => {
+  const call = (over: Partial<Snapshot['calls'][number]>): Snapshot['calls'][number] => ({
+    id: 'x', channel: '게시판', postedAt: Date.parse('2026-09-10T03:00:00Z') / 1000, postedKst: '', market: 'KRX', symbol: '', name: '',
+    entryMode: 'MARKET', entry: null, sl: 1, tps: [], horizonDays: 14, stopBasis: 'TOUCH', stopHours: null, status: 'FILLED', mode: null,
+    skipReason: null, fillPrice: null, fillAt: null, exitAt: null, exits: [], lastReason: null, R: 1, net: null, holdDays: null, riskPct: null, RB: null, last: null, ...over,
+  });
+  it('월별로 승률·평균R·합계R·PF 를 계산하고 보유중은 건수만 센다', () => {
+    const calls = [call({ R: 2 }), call({ R: -1 }), call({ R: 1, channel: '방송' }), call({ status: 'OPEN', R: 0.5 }), call({ status: 'UNFILLED', R: null }),
+      call({ postedAt: Date.parse('2026-10-02T03:00:00Z') / 1000, R: -1 })];
+    const [oct, sep] = periodStats(calls, 'month', 'all');
+    expect(sep.period).toBe('2026-09'); expect(sep.calls).toBe(5); expect(sep.filled).toBe(3); expect(sep.open).toBe(1);
+    expect(sep.winRate).toBeCloseTo(2 / 3); expect(sep.meanR).toBeCloseTo(2 / 3); expect(sep.sumR).toBe(2); expect(sep.pf).toBe(3);
+    expect(oct.period).toBe('2026-10'); expect(oct.pf).toBe(0); expect(oct.winRate).toBe(0);
+    const [only] = periodStats([call({ R: 2 })], 'month', 'all');
+    expect(only.pf).toBe('inf');
+    const byCh = periodStats(calls, 'month', 'channel').filter((r) => r.period === '2026-09').map((r) => `${r.group}:${r.filled}`);
+    expect(byCh).toEqual(['게시판:2', '방송:1']);
+    expect(periodStats(calls, 'week', 'all')[1].period).toBe('2026-W37');
   });
 });
 

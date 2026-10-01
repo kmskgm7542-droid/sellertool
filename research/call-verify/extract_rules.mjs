@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { RULES } from './config.mjs';
 import { parseCall } from './lib.mjs';
 import { notifyText } from './live.mjs';
+import { loadUserAliases } from './aliases.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(HERE, 'data');
@@ -34,19 +35,20 @@ const kst = (sec) => new Date((sec + 9 * 3600) * 1000).toISOString().replace('T'
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // 방송에서 쓰는 별칭 → 사전의 공식 이름. "엑스알피(리플)" 같은 괄호 표기는 양쪽 다 별칭으로 만든다.
-export function buildAliases(upbit = {}) {
+export function buildAliases(upbit = {}, user = {}) {
   const a = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나', 하이닉스: 'SK하이닉스', 삼전: '삼성전자', 현차: '현대차' };
   for (const k of Object.keys(upbit)) {
     const m = k.match(/^(.+?)\((.+)\)$/);
     if (m) { a[m[1]] = k; a[m[2]] = k; }
   }
+  Object.assign(a, user); // 대표가 봇으로 등록한 별칭(data/aliases.json)이 우선
   return a;
 }
 let ALIASES = buildAliases();
 
 // 종목 사전 → 이름 찾기 정규식(긴 이름 우선). 두 글자 주식명(기아·한화·대상…)은 일상어와 겹쳐 제외.
-export function buildNameRegex(krx = {}, upbit = {}) {
-  ALIASES = buildAliases(upbit);
+export function buildNameRegex(krx = {}, upbit = {}, user = {}) {
+  ALIASES = buildAliases(upbit, user);
   const names = [...Object.keys(krx).filter((n) => n.length >= 3), ...Object.keys(upbit).filter((n) => n.length >= 2), ...Object.keys(ALIASES)];
   const uniq = [...new Set(names)].sort((a, b) => b.length - a.length);
   // 앞에 한글·영문·숫자가 붙어 있으면 다른 단어의 일부("하이닉스" 안의 "이닉스")이므로 제외
@@ -120,7 +122,9 @@ export function extractFromSegments(segs, nameRe, rules = RULES) {
 
 async function main() {
   const dry = process.argv.includes('--dry');
-  const nameRe = buildNameRegex(readJson(path.join(DATA, 'krx_list.json'), {}), readJson(path.join(DATA, 'upbit_markets.json'), {}));
+  const user = loadUserAliases();
+  const nameRe = buildNameRegex(readJson(path.join(DATA, 'krx_list.json'), {}), readJson(path.join(DATA, 'upbit_markets.json'), {}), user);
+  if (Object.keys(user).length) console.log(`별칭 ${Object.keys(user).length}개 적용: ${Object.entries(user).map(([k, v]) => `${k}→${v}`).join(', ')}`);
   const state = readJson(STATE, { videos: {} });
   const live = readJson(FILE, { name: '방송(직접 기록)', messages: [] });
   if (!fs.existsSync(VOD)) { console.log('방송 자막 폴더가 없습니다(yt_live.py 먼저).'); return; }

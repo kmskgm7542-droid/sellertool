@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RULES } from './config.mjs';
 import { parseCall } from './lib.mjs';
+import { addAlias, loadUserAliases, parseAliasCommand, removeAlias } from './aliases.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(HERE, 'data');
@@ -26,9 +27,10 @@ const kst = (sec) => new Date((sec + 9 * 3600) * 1000).toISOString().replace('T'
 function makeLookup() {
   const upbit = readJson(path.join(DATA, 'upbit_markets.json'), {});
   const krx = readJson(path.join(DATA, 'krx_list.json'), {});
-  const alias = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나' };
+  const alias = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나', 하이닉스: 'SK하이닉스', 삼전: '삼성전자', 현차: '현대차' };
   for (const k of Object.keys(upbit)) { const m = k.match(/^(.+?)\((.+)\)$/); if (m) { alias[m[1]] = k; alias[m[2]] = k; } }
-  return (raw) => {
+  Object.assign(alias, loadUserAliases()); // 대표가 봇으로 등록한 별칭(data/aliases.json)이 우선
+  const fn = (raw) => {
     const name = alias[raw] ?? raw;
     if (!name) return null;
     if (/^\d{6}$/.test(name)) return ['KRX', name];
@@ -41,6 +43,8 @@ function makeLookup() {
     if (kr.length === 1) return ['KRX', krx[kr[0]]];
     return null;
   };
+  fn.canonical = (raw) => alias[raw] ?? raw; // 별칭이면 공식 이름으로
+  return fn;
 }
 
 // ── 한 줄 해석: 첫 단어 = 종목명(확정), 나머지는 콜 파서 ──
@@ -48,9 +52,12 @@ export function interpret(text, lookup = () => null) {
   const t = String(text).trim();
   const cancel = t.match(/^취소(?:\s+(\S+))?$/);
   if (cancel) return { kind: 'cancel', name: cancel[1] ?? null };
+  const al = parseAliasCommand(t);
+  if (al) return al;
   const words = t.split(/\s+/);
   if (words.length < 2) return { kind: 'ignore' };
-  const name = words[0].replace(/^#/, '');
+  const typed = words[0].replace(/^#/, '');
+  const name = typeof lookup.canonical === 'function' ? lookup.canonical(typed) : typed; // 별칭이면 공식 이름으로 기록
   const rest = words.slice(1).join(' ');
   if (!/(매수|진입)/.test(rest) || !/(손절|컷|스탑)/.test(rest)) return { kind: 'ignore' };
   const p = parseCall(rest, RULES);
@@ -60,7 +67,7 @@ export function interpret(text, lookup = () => null) {
   const fmt = (x) => (x == null ? '-' : x.toLocaleString('ko-KR'));
   const lines = [];
   if (p.ok) {
-    lines.push(`✅ 기록: ${name}${hit ? ` (${hit[0] === 'UPBIT' ? '업비트 ' : '국내주식 '}${hit[1]})` : ' (종목코드 미확인 → 검토 필요)'}`);
+    lines.push(`✅ 기록: ${name}${name !== typed ? ` (별칭 ${typed})` : ''}${hit ? ` (${hit[0] === 'UPBIT' ? '업비트 ' : '국내주식 '}${hit[1]})` : ' (종목코드 미확인 → 검토 필요. "별칭 ' + typed + '=공식이름" 으로 등록 가능)'}`);
     lines.push(`진입 ${p.entryMode === 'MARKET' ? '현재가' : fmt(p.entry)} · 손절 ${fmt(p.sl)} (${p.stopBasis === 'CLOSE' ? `${p.stopHours === 24 ? '일봉' : p.stopHours + '시간'} 종가` : '터치'}) · 목표 ${p.tps.map((x) => fmt(x.price)).join('/')} · ${p.horizonDays}일`);
     const warn = p.flags.filter((f) => !/기본값|터치 적용/.test(f));
     if (warn.length) lines.push(`⚠ ${warn.join(' / ')}`);
@@ -126,6 +133,30 @@ export async function handleUpdate(u, ctx) {
   if (res.kind === 'cancel') {
     const m = cancelCall(res.name);
     await ctx.reply(m ? `↩ 취소: ${kst(Number(m.date_unixtime))} ${m.name}` : '취소할 기록이 없습니다.');
+    return;
+  }
+  if (res.kind === 'alias-list') {
+    const a = loadUserAliases();
+    const rows = Object.entries(a).map(([k, v]) => `${k} → ${v}`);
+    await ctx.reply(rows.length ? `📒 별칭 ${rows.length}개\n${rows.join('\n')}` : '등록된 별칭이 없습니다. 예: 별칭 저스택=제이스텍');
+    return;
+  }
+  if (res.kind === 'alias-help') {
+    await ctx.reply('형식: 별칭 들리는이름=공식이름   (삭제: 별칭 삭제 들리는이름, 목록: 별칭)');
+    return;
+  }
+  if (res.kind === 'alias-del') {
+    await ctx.reply(removeAlias(res.from) ? `🗑 별칭 삭제: ${res.from}` : `별칭 ${res.from} 이(가) 없습니다.`);
+    ctx.lookup = makeLookup();
+    return;
+  }
+  if (res.kind === 'alias-add') {
+    const hit = ctx.lookup(res.to);
+    addAlias(res.from, res.to);
+    ctx.lookup = makeLookup();
+    await ctx.reply(hit
+      ? `📒 별칭 등록: ${res.from} → ${res.to} (${hit[0] === 'UPBIT' ? '업비트 ' : '국내주식 '}${hit[1]})\n지난 방송 자막도 다음 실행 때 이 별칭으로 다시 뽑습니다.`
+      : `📒 별칭 등록: ${res.from} → ${res.to}\n⚠ "${res.to}" 은(는) 종목 목록에서 못 찾았습니다. 공식 종목명(예: 제이스텍)인지 확인해 주세요.`);
     return;
   }
   appendCall(msg, res);

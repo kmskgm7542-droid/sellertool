@@ -7,6 +7,7 @@ import CallsTable from '@/components/calls/calls-table';
 import OpenPositions from '@/components/calls/open-positions';
 import GroupTable from '@/components/calls/group-table';
 import RulesPanel from '@/components/calls/rules-panel';
+import PeriodTable from '@/components/calls/period-table';
 
 export function Notice({ title, body }: { title: string; body: string }) {
   return (
@@ -36,8 +37,11 @@ export default function Dashboard({ s, history }: { s: Snapshot; history: Histor
         <Section title="자산 곡선">
           <EquityChart A={s.equity.A} B={s.equity.B} />
         </Section>
-        <Section title="주차별 추이">
+        <Section title="날짜별 추이">
           <HistoryTable history={history} />
+        </Section>
+        <Section title="기간별 적중율">
+          <PeriodTable calls={s.calls} />
         </Section>
         <Section title={`보유중 (${s.calls.filter((c) => c.status === 'OPEN').length})`}>
           <OpenPositions calls={s.calls} asOf={Date.parse(s.generatedAt) / 1000} />
