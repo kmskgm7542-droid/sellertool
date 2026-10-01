@@ -12,12 +12,13 @@ rem 1) 수집: 게시판·텔레그램·방송 자막·방송 타점(직접 기�
 python -u yt_posts.py >> "%LOG%" 2>&1
 python -u tg_collect.py >> "%LOG%" 2>&1
 python -u yt_live.py >> "%LOG%" 2>&1
+rem 봇에 밀린 메시지(별칭 등록·취소·직접 기록)를 먼저 처리해 그날 자막 추출에 바로 반영
+if defined NODE "%NODE%" live.mjs --once >> "%LOG%" 2>&1
 if exist data\anthropic.json (
   python -u extract_calls.py >> "%LOG%" 2>&1
 ) else (
   if defined NODE "%NODE%" extract_rules.mjs >> "%LOG%" 2>&1
 )
-if defined NODE "%NODE%" live.mjs --once >> "%LOG%" 2>&1
 
 rem 2) 검증: 원장 갱신 → 시세 → 시뮬레이션 → 성적표(웹·HTML) — 매일 갱신해 웹에서 일간으로 확인
 if not defined NODE (

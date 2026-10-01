@@ -169,7 +169,18 @@ function cmdMerge() {
   const ledgerFile = path.join(DATA, 'ledger.csv');
   if (!fs.existsSync(draftFile)) { console.log('초안이 없습니다. 먼저 parse 를 실행하세요.'); return; }
   const draft = readCsv(draftFile);
-  const ledger = fs.existsSync(ledgerFile) ? readCsv(ledgerFile) : [];
+  let ledger = fs.existsSync(ledgerFile) ? readCsv(ledgerFile) : [];
+  // 방송 기록(live_calls.json)에서 사라진 행은 장부에서도 뺀다 — '취소'한 직접 기록, 규칙 변경으로 다시 뽑은 자동추출 기록.
+  const liveFile = path.join(DATA, 'live_calls.json');
+  if (fs.existsSync(liveFile)) {
+    const live = JSON.parse(fs.readFileSync(liveFile, 'utf8').replace(/^﻿/, ''));
+    const msgs = live.messages || [];
+    const liveChannels = new Set(['방송(자동추출)', '방송(직접 기록)', ...msgs.map((m) => m.channel).filter(Boolean)]);
+    const alive = new Set(msgs.filter((m) => m.type === 'message').map((m) => `tg${m.id}`));
+    const before = ledger.length;
+    ledger = ledger.filter((r) => !liveChannels.has(r.channel) || alive.has(r.id.replace(/-\d+$/, '')));
+    if (ledger.length !== before) console.log(`방송 기록에서 지워진 ${before - ledger.length}행을 장부에서 뺐습니다(취소·재추출).`);
+  }
   const known = new Set(ledger.map((r) => r.id));
   // 사람이 사진을 보고 적은 행과 같은 콜(같은 종목·같은 손절가·이틀 이내)은 중복으로 본다
   const day = (r) => Math.floor(Number(r.t_post_unix || 0) / DAY);
