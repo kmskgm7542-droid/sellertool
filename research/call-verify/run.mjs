@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { RULES, COSTS, CRITERIA } from './config.mjs';
 import { parseCalls, simulate, stats, DAY, HOUR } from './lib.mjs';
 import { upbitMarkets, upbitHourly, naverDaily } from './fetch.mjs';
+import { loadUserAliases } from './aliases.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(HERE, 'data');
@@ -101,7 +102,9 @@ async function cmdParse(file) {
   }
   if (fs.existsSync(krxFile)) for (const [k, v] of Object.entries(JSON.parse(fs.readFileSync(krxFile, 'utf8')))) krx.set(k, v);
   // strict: 직접 입력한 이름(방송 기록)은 줄임말 방향만 허용("테스트종목" → 테스 같은 오인 방지)
-  const lookup = (name, strict = false) => {
+  const userAlias = loadUserAliases(); // 봇으로 등록한 별칭("제이스텍" → 제이스로보틱스처럼 옛 이름·들리는 이름)
+  const lookup = (raw, strict = false) => {
+    const name = userAlias[raw] ?? raw;
     if (!name) return null;
     if (/^\d{6}$/.test(name)) return ['KRX', name];
     if (upbit.has(name)) return ['UPBIT', upbit.get(name)];
@@ -186,11 +189,19 @@ function cmdMerge() {
   const day = (r) => Math.floor(Number(r.t_post_unix || 0) / DAY);
   const isDup = (r) => ledger.some((k) => (k.symbol || k.name) === (r.symbol || r.name) && k.sl === r.sl && Math.abs(day(k) - day(r)) <= 2);
   const added = [];
+  let resolved = 0;
   for (const r of draft) {
-    if (known.has(r.id) || isDup(r) || /부정확/.test(r.flags)) continue;
+    if (known.has(r.id)) {
+      // 종목코드가 비어 있던 행이 이번 파싱에서 찾아졌으면(별칭 등록·종목 목록 갱신) 코드만 채운다. 사람이 고친 값은 그대로.
+      const k = ledger.find((x) => x.id === r.id);
+      if (k && !k.symbol && r.symbol) { k.market = r.market; k.symbol = r.symbol; k.ok = r.ok; k.flags = r.flags; resolved++; }
+      continue;
+    }
+    if (isDup(r) || /부정확/.test(r.flags)) continue;
     ledger.push(r);
     added.push(r);
   }
+  if (resolved) console.log(`종목코드가 새로 확인된 ${resolved}행을 장부에 반영했습니다.`);
   writeCsv(ledgerFile, COLS, ledger);
   const pending = ledger.filter((r) => r.ok !== '1' && !/부정확/.test(r.flags));
   fs.writeFileSync(
