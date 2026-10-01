@@ -95,6 +95,28 @@ export function equitySvg(eqA, eqB) {
   <p class="legend"><span class="swA"></span>A안 전체 콜 <span class="swB"></span>B안 정밀 시각 콜만</p>`;
 }
 
+// 월별 적중율(종료 콜 기준) — 웹의 '기간별 적중율'과 같은 계산의 월별·전체 표
+function monthlyTable(calls) {
+  const m = new Map();
+  for (const c of calls) {
+    if (!c.postedAt) continue;
+    const d = new Date((c.postedAt + 9 * 3600) * 1000);
+    const k = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    const b = m.get(k) ?? { calls: 0, filled: 0, open: 0, wins: 0, sum: 0, pos: 0, neg: 0 };
+    b.calls += 1;
+    if (c.status === 'OPEN') b.open += 1;
+    if (c.status === 'FILLED' && typeof c.R === 'number' && Number.isFinite(c.R)) {
+      b.filled += 1; b.sum += c.R; if (c.R > 0) { b.wins += 1; b.pos += c.R; } else b.neg -= c.R;
+    }
+    m.set(k, b);
+  }
+  const rows = [...m.entries()].sort((x, y) => y[0].localeCompare(x[0]));
+  if (!rows.length) return '';
+  return `<section><h2>월별 적중율 <span class="muted small">(게시 월 기준, 종료 콜)</span></h2><div class="scroll"><table><thead><tr><th>월</th><th>콜</th><th>종료</th><th>승률</th><th>평균R</th><th>합계R</th><th>PF</th><th>보유중</th></tr></thead><tbody>
+  ${rows.map(([k, b]) => `<tr><td>${k}</td><td>${b.calls}</td><td>${b.filled}${b.filled < 5 ? ' <span class="muted small">(참고)</span>' : ''}</td><td>${b.filled ? pct(b.wins / b.filled) : '-'}</td><td>${b.filled ? fx(b.sum / b.filled) : '-'}</td><td class="${b.sum > 0 ? 'pos' : b.sum < 0 ? 'neg' : ''}">${b.filled ? signedR(b.sum) : '-'}</td><td>${b.neg > 0 ? fx(b.pos / b.neg) : b.pos > 0 ? '∞' : '-'}</td><td>${b.open || '-'}</td></tr>`).join('')}
+  </tbody></table></div></section>`;
+}
+
 function statsTable(title, groups, labelOf = (k) => k) {
   const rows = Object.entries(groups);
   if (!rows.length) return '';
@@ -171,6 +193,7 @@ ${open.length ? `<section><h2>보유중 ${open.length}건</h2><div class="scroll
 
 <section><h2>콜 목록 ${calls.length}건</h2><div class="scroll"><table><thead><tr><th>게시(KST)</th><th>채널</th><th>종목</th><th class="num">진입</th><th class="num">손절</th><th class="num">목표</th><th>결과</th></tr></thead><tbody>${callRows}</tbody></table></div></section>
 
+${monthlyTable(s.calls)}
 ${statsTable('시장별', s.byMarket ?? {}, (k) => MARKET[k] ?? k)}
 ${statsTable('채널별', s.byChannel ?? {})}
 
