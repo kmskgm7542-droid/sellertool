@@ -130,6 +130,13 @@ export async function notifyText(text) {
 export async function handleUpdate(u, ctx) {
   const msg = u.message;
   if (!msg?.text || String(msg.chat?.id) !== String(ctx.chatId)) return;
+  // 한 메시지에 여러 줄(별칭 두 개, 콜 두 개)을 보내면 줄마다 따로 처리한다. 한 줄이면 그대로.
+  const lines = String(msg.text).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  if (lines.length <= 1) return handleLine(msg, ctx);
+  for (let i = 0; i < lines.length; i++) await handleLine({ ...msg, text: lines[i], message_id: `${msg.message_id}_${i + 1}` }, ctx);
+}
+
+async function handleLine(msg, ctx) {
   const res = interpret(msg.text, ctx.lookup);
   if (res.kind === 'ignore') return;
   if (res.kind === 'cancel') {
