@@ -109,8 +109,10 @@ function botCfg() {
   return c;
 }
 async function api(c, method, params) {
+  // 응답이 영영 안 오면(절전·네트워크 끊김) 봇이 멈춘 채 남는다 → 긴 대기(getUpdates 50초)보다 조금 길게 기다리고 끊어 다시 시도
   const r = await fetch(`https://api.telegram.org/bot${c.token}/${method}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params ?? {}),
+    signal: AbortSignal.timeout(method === 'getUpdates' ? 75000 : 30000),
   });
   const j = await r.json();
   if (!j.ok) throw new Error(`${method}: ${j.description}`);
@@ -146,13 +148,16 @@ export async function handleUpdate(u, ctx) {
     return;
   }
   if (res.kind === 'alias-del') {
-    await ctx.reply(removeAlias(res.from) ? `🗑 별칭 삭제: ${res.from}` : `별칭 ${res.from} 이(가) 없습니다.`);
+    const had = removeAlias(res.from);
+    console.log(`[${kst(msg.date)}] 별칭 삭제: ${res.from}${had ? '' : ' (없음)'}`);
     ctx.lookup = makeLookup();
+    await ctx.reply(had ? `🗑 별칭 삭제: ${res.from}` : `별칭 ${res.from} 이(가) 없습니다.`);
     return;
   }
   if (res.kind === 'alias-add') {
     const hit = ctx.lookup(res.to);
     addAlias(res.from, res.to);
+    console.log(`[${kst(msg.date)}] 별칭 등록: ${res.from} → ${res.to}${hit ? ` (${hit[0]} ${hit[1]})` : ' (종목 목록에 없음)'}`);
     ctx.lookup = makeLookup();
     await ctx.reply(hit
       ? `📒 별칭 등록: ${res.from} → ${res.to} (${hit[0] === 'UPBIT' ? '업비트 ' : '국내주식 '}${hit[1]})\n지난 방송 자막도 다음 실행 때 이 별칭으로 다시 뽑습니다.`
