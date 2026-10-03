@@ -20,7 +20,7 @@ const STATE = path.join(DATA, 'extract_state.json');
 const CHANNEL = '방송(자동추출)';
 const BEFORE = 2; // 창: 이름이 나온 자막 앞 2구간
 const AFTER = 8; //     뒤 8구간(약 1~2분)
-const RULES_VERSION = 2; // 추출 규칙이 바뀌면 올린다 → 기존 자동추출 기록을 지우고 전체를 다시 뽑는다
+const RULES_VERSION = 3; // 추출 규칙이 바뀌면 올린다 → 기존 자동추출 기록을 지우고 전체를 다시 뽑는다
 
 // 일상어와 같은 코인 이름 — "구간인지를 보라는 거지", "리스크를 줄이는" 처럼 말에 섞여 오탐이 잦다.
 // 같은 창 안에 '코인'이라는 말이 함께 나올 때만 종목으로 본다.
@@ -49,7 +49,8 @@ let ALIASES = buildAliases();
 // 종목 사전 → 이름 찾기 정규식(긴 이름 우선). 두 글자 주식명(기아·한화·대상…)은 일상어와 겹쳐 제외.
 export function buildNameRegex(krx = {}, upbit = {}, user = {}) {
   ALIASES = buildAliases(upbit, user);
-  const names = [...Object.keys(krx).filter((n) => n.length >= 3), ...Object.keys(upbit).filter((n) => n.length >= 2), ...Object.keys(ALIASES)];
+  // 한 글자 별칭("솔"→솔라나)은 자막에서 "솔직히"·"솔루션" 같은 다른 말의 첫 글자와 겹치므로 자동추출에서는 뺀다(직접 기록에서는 그대로 씀)
+  const names = [...Object.keys(krx).filter((n) => n.length >= 3), ...Object.keys(upbit).filter((n) => n.length >= 2), ...Object.keys(ALIASES).filter((n) => n.length >= 2)];
   const uniq = [...new Set(names)].sort((a, b) => b.length - a.length);
   // 앞에 한글·영문·숫자가 붙어 있으면 다른 단어의 일부("하이닉스" 안의 "이닉스")이므로 제외
   return uniq.length ? new RegExp(`(?<![가-힣A-Za-z0-9])(${uniq.map(esc).join('|')})`, 'g') : /$^/;
