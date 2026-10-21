@@ -85,7 +85,9 @@ const ENTRY_RE = new RegExp(
   'g',
 );
 // 손절: "160이탈손절" "240이탈시 손절" "13천 칼손절" "480컷" "473원 일봉종가이탈컷" "손절 8%대 이하"(무시)
-const SL_RE = new RegExp(P + String.raw`\s*(?:원)?\s*(?:[가-힣]{0,10}?)\s*(?:칼손절|손절가|손절|컷|스탑|이탈시\s*매도|이탈하면\s*매도)`);
+// "530원일봉종가 이탈컷"처럼 숫자와 '컷' 사이에 띄어쓰기가 한 번 끼는 경우도 허용
+const SL_RE = new RegExp(P + String.raw`\s*(?:원)?\s*(?:[가-힣]{0,10}?(?:\s[가-힣]{0,6}?)?)\s*(?:칼손절|손절가|손절|컷|스탑|이탈시\s*매도|이탈하면\s*매도)`);
+const SL_RE_G = new RegExp(SL_RE.source, 'g');
 const SL_RE2 = new RegExp(String.raw`(?:손절가|손절|컷)\s*(?:은|는|가|을|를|:)?\s*` + P);
 // 목표: "목표는 230원" "목표 500정도" "31원익절" "400원봅니다" "4500원위에" "700원이상" "19천~2만도달"
 const TP_RANGE_RE = new RegExp(P + String.raw`\s*~\s*` + P, 'g');
@@ -96,7 +98,7 @@ const TP_UNIT_RE = new RegExp(NUM + String.raw`\s*(?:(억|만|천)\s*원?|원)` 
 // 조사 떼기 — 두 글자 종목명("온도", "지토")이 잘리지 않도록 세 글자 이상일 때만
 const strip = (s) => (s.length >= 3 ? s.replace(/(을|를|은|는|이|가|도|만|의|에|로)$/, '') : s);
 
-function finishCall(seg, entryMode, entry, entryRange, name, rules, whole) {
+function finishCall(seg, entryMode, entry, entryRange, name, rules, whole, pre = '') {
   const flags = [];
   let w = seg;
   if (entryRange) flags.push('진입가 범위(보수적으로 위쪽 값 적용)');
@@ -108,7 +110,12 @@ function finishCall(seg, entryMode, entry, entryRange, name, rules, whole) {
   if (s) {
     sl = toPrice(s[1], s[2]);
     w = blank(w, s);
-  } else flags.push('손절가 없음');
+  } else {
+    // "73.1컷잡고 77원아래 매수" "65.8 이탈컷잡고 71~70원 매수"처럼 손절을 매수 앞에 말한 경우
+    const before = [...pre.matchAll(SL_RE_G)].map((m) => toPrice(m[1], m[2])).filter((v) => entry == null || v < entry);
+    if (before.length) sl = before[before.length - 1];
+    else flags.push('손절가 없음');
+  }
 
   // 목표가 — "345원까지 매수유효" 같은 진입 상한은 목표가가 아니다
   const raw = [];
@@ -161,18 +168,26 @@ export function parseCalls(text, rules) {
     const segStart = i === 0 ? 0 : anchors[i - 1].index + anchors[i - 1][0].length;
     const segEnd = i + 1 < anchors.length ? anchors[i + 1].index : src.length;
     // 종목명: 앵커 바로 앞 단어(같은 문장 안), 없으면 해시태그
-    const before = src.slice(segStart, a.index).trim().split(/[\s,·]+/).filter(Boolean);
+    const preText = src.slice(segStart, a.index);
+    const before = preText.trim().split(/[\s,·]+/).filter(Boolean);
+    const stop = /^(오늘|내일|지금|다시|단타|단기|스윙|중기|장기|사생팬|사생팬전용|회원|전용|현재|현재가|여기|이건|그리고|또는|리스크|추세|눌림|돌파|매도|익절|손절|분할|자리|부근|종가|시간|일봉|이탈|설명|영상|및|등|약|각|그|이|저|더|좀|꼭|잘)$/;
+    // "폼좋아지네요" "이탈컷잡고" "설명드린대로" 같은 서술어는 종목명이 아니다
+    const verbish = /(잡고|하고|해서|네요|어요|아요|지요|죠$|습니다|합니다|드린|하는|좋아|컷)/;
+    const isName = (word, minLen) => {
+      const rawWord = word.replace(/^#/, '');
+      const cand = strip(rawWord);
+      return new RegExp(`^[가-힣A-Za-z][가-힣A-Za-z0-9]{${minLen - 1},}$`).test(cand) && !stop.test(rawWord) && !stop.test(cand) && !verbish.test(cand)
+        ? cand
+        : null;
+    };
     let name = null;
     for (let j = before.length - 1; j >= 0 && j >= before.length - 3; j--) {
-      const cand = strip(before[j].replace(/^#/, ''));
-      const stop = /^(오늘|내일|지금|다시|단타|단기|스윙|중기|장기|사생팬|회원|전용|현재가|여기|이건|그리고|또는|리스크|추세|눌림|돌파|매도|익절|손절|분할|자리|부근|및|등|약|각|그|이|저|더|좀|꼭|잘)$/;
       // 바로 앞 단어는 한 글자 종목명("넴")도 허용, 그 앞 단어는 두 글자 이상만
-      const minLen = j === before.length - 1 ? 1 : 2;
-      if (new RegExp(`^[가-힣A-Za-z][가-힣A-Za-z0-9]{${minLen - 1},}$`).test(cand) && !stop.test(cand)) {
-        name = cand;
-        break;
-      }
+      name = isName(before[j], j === before.length - 1 ? 1 : 2);
+      if (name) break;
     }
+    // 앞 세 단어에 없으면 첫 콜에 한해 글머리 단어("인터폴드 설명드린대로 … 65.8 이탈컷잡고 71원 매수")
+    if (!name && i === 0) for (const wd of before) if ((name = isName(wd, 2))) break;
     if (!name) name = (src.match(/#([^\s#]+)/) || [])[1] ?? null;
     let entryMode;
     let entry = null;
@@ -186,7 +201,7 @@ export function parseCalls(text, rules) {
       } else entry = p1;
     } else entryMode = 'MARKET';
     const seg = src.slice(a.index + a[0].length, segEnd);
-    calls.push(finishCall(seg, entryMode, entry, range, name, rules, src));
+    calls.push(finishCall(seg, entryMode, entry, range, name, rules, src, preText));
   }
   return calls;
 }

@@ -25,6 +25,17 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
   ok(p.stopBasis === 'CLOSE' && p.stopHours === 24, '주식형: 일봉 종가 손절');
 }
 {
+  const p = parseCall('샘플코인 설명드린대로 다시 회복하는 모양세죠 4시간 종가로 65.8 이탈컷잡고 71~70원 매수 1~2주 단기로는 90원 목표가', RULES);
+  ok(p.ok && p.name === '샘플코인' && p.entry === 71 && p.sl === 65.8 && p.tps[0].price === 90, '매수 앞 손절·글머리 종목명');
+  ok(p.stopBasis === 'CLOSE' && p.stopHours === 4 && p.horizonDays === 14, '매수 앞 손절: 4시간 종가·기간 2주');
+  const q = parseCall('가상종목 다시 폼좋아지네요 96원아래 매수 90손절잡고 스윙으론180노려볼 자리', RULES);
+  ok(q.ok && q.name === '가상종목' && q.sl === 90, '서술어("…네요")를 종목명으로 오인하지 않음');
+  const r = parseCall('회원 가상헬스 현재가 6450부근 매수 6200이탈마감 컷잡고 8900원 2~4주', RULES);
+  ok(r.ok && r.name === '가상헬스', '"현재가"를 종목명("현재")으로 오인하지 않음');
+  const s = parseCall('가상토큰 550원매수 530원일봉종가 이탈컷잡고 650원 노려볼수있는자리', RULES);
+  ok(s.ok && s.sl === 530 && s.stopBasis === 'CLOSE', '"530원일봉종가 이탈컷" 띄어쓰기 손절');
+}
+{
   ok(normalizePrices('2만5천원 매수, 1,250원') === '25000원 매수, 1250원', '복합 단위·쉼표 정규화');
   const p = parseCall('테스트 2만5천원 매수 2만3천 손절 3만원 목표 20일선 지지', RULES);
   ok(p.entry === 25000 && p.sl === 23000 && p.tps[0].price === 30000, '복합 단위 가격 인식');

@@ -192,9 +192,10 @@ function cmdMerge() {
   let resolved = 0;
   for (const r of draft) {
     if (known.has(r.id)) {
-      // 종목코드가 비어 있던 행이 이번 파싱에서 찾아졌으면(별칭 등록·종목 목록 갱신) 코드만 채운다. 사람이 고친 값은 그대로.
+      // 종목코드가 비어 있던 행(아직 검증에 못 쓰인 행)은 이번 파싱 결과로 통째로 바꾼다
+      // — 별칭 등록·종목 목록 갱신·파서 개선(매수 앞 손절, 글머리 종목명)이 반영되도록. 코드가 있는 행(사람이 고친 값 포함)은 그대로.
       const k = ledger.find((x) => x.id === r.id);
-      if (k && !k.symbol && r.symbol) { k.market = r.market; k.symbol = r.symbol; k.ok = r.ok; k.flags = r.flags; resolved++; }
+      if (k && !k.symbol && r.symbol) { Object.assign(k, r); resolved++; }
       continue;
     }
     if (isDup(r) || /부정확/.test(r.flags)) continue;
