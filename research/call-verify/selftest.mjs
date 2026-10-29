@@ -168,5 +168,18 @@ const N = 24 * 20;
   ok(lim.mode === 'LIMIT' && lim.pf === 1000 && lim.tFill === T1 + 5 * D, '일봉·장 마감 후 지정가 → 기준가는 그날 종가, 이틀 뒤 체결');
 }
 
+{
+  // 자막 자동추출: 비율(0.5%)은 가격이 아니고, "23만 5,000원"은 한 숫자, 방송자가 "추천 안 합니다"라고 밝힌 설명은 뽑지 않는다
+  const { normalizeSpeech, extractFromSegments } = await import('./extract_rules.mjs');
+  const n = normalizeSpeech('가나다 23만 5,000원까지 가고 0.5% 손절');
+  ok(/235000원/.test(n) && !/0\.5/.test(n), '자막: 23만 5,000원 → 235000, 0.5% 제거');
+  const re = /(?<![가-힣A-Za-z0-9])(가나다)/g;
+  const seg = (t, text) => ({ t, text });
+  const said = [seg(0, '추천은 안 합니다 설명만 드리는 거예요'), seg(5, '가나다 여기서 매수 해 볼 수 있는 자리'), seg(10, '손절 1000원 목표 1500원')];
+  ok(extractFromSegments(said, re).length === 0, '자막: "추천 안 합니다" 설명은 콜로 뽑지 않음');
+  const call = [seg(0, '가나다 지금 매수 괜찮아 보입니다'), seg(5, '손절 1000원 목표 1500원')];
+  ok(extractFromSegments(call, re).length === 1, '자막: 일반 콜은 그대로 뽑음');
+}
+
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail ? 1 : 0);
