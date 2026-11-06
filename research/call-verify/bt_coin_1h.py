@@ -52,7 +52,7 @@ def main():
                if m["market"].startswith("KRW-") and m["market"] not in STABLE]
     print(f"업비트 원화마켓 {len(markets)}개 1시간봉 준비 (코인당 최대 {NEED_BARS}봉)")
     data, done = [], 0
-    with ThreadPoolExecutor(max_workers=3) as ex:  # 업비트 시세 요청 한도(초당 10회) 안쪽
+    with ThreadPoolExecutor(max_workers=6) as ex:  # 업비트 시세 요청 한도(초당 10회) 근처 — 429 는 get() 이 재시도
         for mk, rows in ex.map(fetch, markets):
             done += 1
             if done % 25 == 0:
