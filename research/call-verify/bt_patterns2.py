@@ -90,12 +90,18 @@ def main():
         rows = json.loads(f.read_text()) if f.exists() else load((name, code))[2]
         if rows and len(rows) > 450:
             data.append((name, code, mkt, rows))
+    print(f"개별주 {len(data)}개")
+    evaluate(data, reg, TEST_DAYS, "KOSDAQ")
+
+
+def evaluate(data, reg, test_days, show_reg):
+    """data: [(이름, 코드, 국면키, 일봉 rows)], reg: {국면키: {날짜: 지수>20일선}}"""
     all_dates = sorted({r[0] for *_, rows in data for r in rows})
-    test_dates = all_dates[-TEST_DAYS:]
+    test_dates = all_dates[-test_days:]
     start, mid = test_dates[0], test_dates[len(test_dates) // 2]
-    print(f"개별주 {len(data)}개, 기간 {start}~{test_dates[-1]}, 앞/뒤 경계 {mid}")
-    up_days = sum(reg['KOSDAQ'].get(d, False) for d in test_dates)
-    print(f"코스닥 20일선 위였던 날: {up_days}/{len(test_dates)}일")
+    print(f"기간 {start}~{test_dates[-1]}, 앞/뒤 경계 {mid}")
+    up_days = sum(reg[show_reg].get(d, False) for d in test_dates)
+    print(f"{show_reg} 20일선 위였던 날: {up_days}/{len(test_dates)}일")
 
     trades = {p: [] for p in ("p1", "p2")}
     base = {per: {h: [0.0, 0] for h in HZ} for per in ("all", "front", "back")}
