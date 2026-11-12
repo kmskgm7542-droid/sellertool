@@ -42,5 +42,6 @@ npm install 후 dev 서버 띄우고, 네이버 API가 실제로 응답하는지
 ```
 
 ## ⚠️ 규칙
+- **브랜치·배포 규칙 필독** → `CLAUDE.md` 의 '수정사항 덮어쓰기 방지' 절. call-verify 는 `claude/automated-trading-ecg8p6` 에서만 작업, 끝나면 master 로 PR 병합.
 - 티원(자동매매)과 별개. 이 repo는 커머스 소싱 도구.
 - API 키·시크릿·개인정보 커밋/노출 금지.

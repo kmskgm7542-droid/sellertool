@@ -1,5 +1,5 @@
 """종목 목록 내려받기 — 업비트 원화마켓(코인 한글명→마켓코드), 한국거래소 상장사(회사명→종목코드).
-  실행: markets.bat   결과: data/upbit_markets.json, data/krx_list.json  (한 달에 한 번쯤 갱신)
+  실행: markets.bat   결과: data/upbit_markets.json, data/krx_list.json  (daily_run 이 매일 자동 갱신 — 신규 상장 코인·종목 반영)
 """
 import json
 import re
@@ -20,6 +20,8 @@ def get(url):
 try:
     rows = json.loads(get("https://api.upbit.com/v1/market/all?isDetails=false"))
     up = {r["korean_name"]: r["market"] for r in rows if r["market"].startswith("KRW-")}
+    if len(up) < 50:
+        raise RuntimeError(f"원화마켓 {len(up)}종목뿐 — 기존 목록 유지")
     (DATA / "upbit_markets.json").write_text(json.dumps(up, ensure_ascii=False, indent=1), "utf-8")
     print(f"업비트 원화마켓 {len(up)}종목 저장")
 except Exception as exc:
@@ -37,7 +39,7 @@ try:
                 break
             for it in items:
                 code, name = it.get("itemCode"), it.get("stockName")
-                if code and name and re.fullmatch(r"\d{6}", code):
+                if code and name and re.fullmatch(r"\d[0-9A-Z]{5}", code):  # 신규 상장은 영문 섞인 코드(예: 0126Z0)
                     krx[name] = code
             if len(items) < 100:
                 break
@@ -51,14 +53,15 @@ if len(krx) < 500:
         html = get("https://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13").decode("euc-kr", "ignore")
         for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
             tds = [re.sub(r"<[^>]+>", "", t).strip() for t in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
-            if len(tds) >= 2 and re.fullmatch(r"\d{6}", tds[1]):
+            if len(tds) >= 2 and re.fullmatch(r"\d[0-9A-Z]{5}", tds[1]):
                 krx.setdefault(tds[0], tds[1])
         print(f"KIND 포함 {len(krx)}종목")
     except Exception as exc:
         print(f"KIND 목록 실패: {exc}")
 
+if len(krx) < 500:
+    # 매일 자동 갱신 중 일시 오류로 빈 목록이 기존 목록을 덮어쓰지 않게 — 기존 파일 유지
+    print(f"⚠ 국내주식 목록이 {len(krx)}종목뿐이라 저장하지 않고 기존 목록을 유지합니다.")
+    sys.exit(1)
 (DATA / "krx_list.json").write_text(json.dumps(krx, ensure_ascii=False, indent=1), "utf-8")
 print(f"국내주식 {len(krx)}종목 저장 → {DATA / 'krx_list.json'}")
-if len(krx) < 500:
-    print("⚠ 종목 수가 너무 적습니다. 이 창을 캡처해 주세요.")
-    sys.exit(1)

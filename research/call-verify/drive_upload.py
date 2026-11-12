@@ -2,7 +2,8 @@
 검토용 파일을 구글 드라이브 웹에 직접 올린다 — 드라이브 데스크톱 없이, 유튜브 수집기와 같은 로그인 프로필(data/yt_profile)의 브라우저로.
   실행: python drive_upload.py   (export_drive.py 가 드라이브 데스크톱 폴더를 못 찾으면 자동으로 이 방식을 쓴다)
   대상 폴더: 김이사가 대표 드라이브에 만든 'call-verify-sync' (FOLDER_ID). 같은 이름 충돌을 피하려고 파일명 앞에 시각을 붙인다.
-  올리는 것: live_vod/*.json, live_calls.json, ledger.csv, results.json, summary.txt, report.md, pending_review.txt, 로그. 비밀 파일은 올리지 않는다.
+  올리는 것: live_vod/*.json, live_calls.json, ledger.csv, results.json, summary.txt, report.md, pending_review.txt, health.txt,
+            게시판·텔레그램 원본(yt_result.json·result.json), 로그. 비밀 파일(토큰·세션·키)은 올리지 않는다.
   방식: 한 번에 20개 넘게 넣으면 드라이브 웹이 몇 개를 조용히 떨어뜨리므로 5개씩 나눠 올린다.
 """
 import asyncio
