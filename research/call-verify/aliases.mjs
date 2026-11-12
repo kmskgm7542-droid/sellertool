@@ -23,6 +23,11 @@ export const DEFAULT_ALIASES = {
   오픈내저: '오픈렛저',
   '오픈 내저': '오픈렛저',
   크래딧코인: '크레딧코인',
+  'LG CNS': 'LG씨엔에스',
+  LGCNS: 'LG씨엔에스',
+  '아시안 IDT': '아시아나IDT',
+  'DND 파마텍': '디앤디파마텍',
+  DND파마텍: '디앤디파마텍',
 };
 
 // 봇으로 등록한 별칭(data/aliases.json)만 — 등록·삭제·목록용

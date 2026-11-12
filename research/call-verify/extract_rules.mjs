@@ -194,11 +194,12 @@ async function main() {
       });
     });
     console.log(`  → 타점 후보 ${found.length}건${dry ? ' (dry)' : ' 기록'}`);
-    for (const r of findReviewCandidates(segs, nameRe)) {
+    const cands = findReviewCandidates(segs, nameRe);
+    for (const r of cands) {
       const t = start ? start + Math.floor(r.t) : 0;
       review.push(`${t ? kst(t) : '시각미상'} | ${r.name} | ${(v.title || id).slice(0, 30)} | ${r.quote}`);
     }
-    if (!dry) state.videos[id] = { calls: found.length, at: new Date().toISOString(), title: v.title, mode: 'rules' };
+    if (!dry) state.videos[id] = { calls: found.length, review: cands.length, at: new Date().toISOString(), title: v.title, mode: 'rules' };
   }
   if (!dry) {
     fs.writeFileSync(FILE, JSON.stringify(live, null, 1));
