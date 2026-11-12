@@ -15,7 +15,9 @@ DATA = HERE / "data"
 CFG = DATA / "drive.json"
 FILES = ["live_calls.json", "ledger.csv", "results.json", "summary.txt", "report.md", "report.html", "pending_review.txt", "vod_review.txt", "health.txt",
          "daily.log", "weekly.log", "live.log", "vod.log", "yt_live_run.log", "extract_run.log", "drive_upload_run.log",
-         "yt_live_state.json", "extract_state.json"]
+         "yt_live_state.json", "extract_state.json",
+         # 게시판·텔레그램 원본(대표 결정 2026-11-12) — 새 글이 콜인지 매일 대조하기 위해. 드라이브(비공개)에만, 레포에는 올리지 않는다.
+         "yt_result.json", "result.json"]
 
 
 def find_drive_root():

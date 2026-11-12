@@ -108,6 +108,22 @@ function botCfg() {
   if (!c?.token) { console.log('data/tg_bot.json 이 없습니다. setup_bot.bat 을 먼저 실행하세요.'); process.exit(1); }
   return c;
 }
+// 봇 진단(토큰은 출력하지 않음): 봇 이름·웹훅·대기 메시지 수를 로그에 남긴다 — 메시지가 안 들어올 때 PowerShell 없이 원인을 좁히기 위해.
+// 방송 대기(--minutes) 시작 때는 설정한 대화방에 시작 알림을 보내, 대표가 '이 대화방'에 답하면 되도록 한다.
+async function diagnose(c, minutes) {
+  try {
+    const me = await api(c, 'getMe', {});
+    const wh = await api(c, 'getWebhookInfo', {});
+    console.log(`봇 진단: @${me.username} · 웹훅 ${wh.url ? '설정됨(getUpdates 불가 — 해제 필요)' : '없음'} · 텔레그램 대기 메시지 ${wh.pending_update_count ?? 0}건${wh.last_error_message ? ` · 최근 오류 ${wh.last_error_message}` : ''}`);
+    if (minutes) {
+      const end = new Date(Date.now() + minutes * 60000 + 9 * 3600000).toISOString().slice(11, 16);
+      await api(c, 'sendMessage', { chat_id: c.chat_id, text: `🟢 방송 타점 기록 대기 시작(~${end}). 이 대화방에 보내 주세요.\n예) 종목 현재가 매수 손절 N 목표 N 7일 / 취소 종목 / 별칭` });
+    }
+  } catch (e) {
+    console.log(`봇 진단 실패: ${e.message}`);
+  }
+}
+
 async function api(c, method, params) {
   // 응답이 영영 안 오면(절전·네트워크 끊김) 봇이 멈춘 채 남는다 → 긴 대기(getUpdates 50초)보다 조금 길게 기다리고 끊어 다시 시도
   const r = await fetch(`https://api.telegram.org/bot${c.token}/${method}`, {
@@ -129,7 +145,12 @@ export async function notifyText(text) {
 
 export async function handleUpdate(u, ctx) {
   const msg = u.message;
-  if (!msg?.text || String(msg.chat?.id) !== String(ctx.chatId)) return;
+  if (!msg?.text) return;
+  if (String(msg.chat?.id) !== String(ctx.chatId)) {
+    // 설정한 대화방이 아닌 곳(다른 사람·그룹)에서 온 메시지 — 내용은 남기지 않고 어디서 왔는지만 기록(봇 진단용)
+    console.log(`다른 대화방 메시지 무시: chat ${msg.chat?.id} (${msg.chat?.type ?? '?'}) — 설정 chat_id ${ctx.chatId}`);
+    return;
+  }
   // 한 메시지에 여러 줄(별칭 두 개, 콜 두 개)을 보내면 줄마다 따로 처리한다. 한 줄이면 그대로.
   const lines = String(msg.text).split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   if (lines.length <= 1) return handleLine(msg, ctx);
@@ -186,6 +207,7 @@ async function main() {
   const until = Date.now() + minutes * 60000;
   fs.mkdirSync(DATA, { recursive: true });
   console.log(`live.mjs ${minutes ? `${minutes}분 대기` : '밀린 메시지 처리'} 시작 (offset ${state.offset})`);
+  await diagnose(c, minutes);
   do {
     let updates;
     try {
