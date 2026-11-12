@@ -10,7 +10,7 @@
     4 못 알아본 이름     자막의 영문·숫자 약칭(예: LK3, ICTK)이 매매 표현 옆에 2회 이상 나오는데 종목 목록·별칭에 없음
     5 게시판 → 장부     최근 3일 게시글 중 매수 표현과 숫자가 있는데 장부에 없는 글
     6 종목코드 없음      장부에 '시장·종목코드 입력 필요' 행이 있음
-    7 종목 목록·디스크   7일 넘게 갱신 안 됨, 업비트 50·국내 500종목 미만, data 드라이브 여유 5GB 미만
+    7 종목 목록·디스크   7일 넘게 갱신 안 됨, 업비트 50·국내 500종목 미만, data 드라이브·C 드라이브 여유 5GB 미만
     8 오류 로그         이번 실행 daily.log, 지난 드라이브 업로드 로그에 오류·실패
     9 검증 대상 수      전날보다 줄어듦
 """
@@ -189,17 +189,22 @@ def main():
         n = len(load(f, {}))
         if age > 7 or n < need:
             probs.append(f"{fn} {n}종목·{age:.0f}일 전")
-    # 디스크 여유 — data 폴더가 있는 드라이브(D 로 옮겼으면 D). 5GB 미만이면 경보
-    try:
-        import shutil
-        free_gb = shutil.disk_usage(DATA.resolve()).free / 1e9
-        drive = DATA.resolve().drive or "/"
-        if free_gb < 5:
-            probs.append(f"{drive} 여유 공간 {free_gb:.1f}GB(5GB 미만)")
-        else:
-            oks.append(f"✅ 디스크: data 위치 {DATA.resolve()} · 여유 {free_gb:.0f}GB")
-    except Exception:
-        pass
+    # 디스크 여유 — data 가 있는 드라이브(PC 는 D:\Projects\call-verify\data → D)와, 별도로 C 드라이브(용량 관리 중). 5GB 미만이면 경보
+    import shutil
+    seen = set()
+    for label, p in (("data", DATA.resolve()), ("C", Path("C:/"))):
+        try:
+            drive = p.drive or "/"
+            if drive in seen or not p.exists():
+                continue
+            seen.add(drive)
+            free_gb = shutil.disk_usage(p).free / 1e9
+            if free_gb < 5:
+                probs.append(f"{drive} 여유 공간 {free_gb:.1f}GB(5GB 미만)")
+            else:
+                oks.append(f"✅ 디스크 {drive}: 여유 {free_gb:.0f}GB" + (f" (data 위치 {p})" if label == "data" else ""))
+        except Exception:
+            pass
     if probs:
         warn("종목 목록·디스크: " + ", ".join(probs))
     else:
