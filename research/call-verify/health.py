@@ -240,7 +240,12 @@ def main():
     for k in ("bot", "usable"):
         st[k] = {d: st[k][d] for d in sorted(st[k])[-60:]}
     STATE.write_text(json.dumps(st, ensure_ascii=False, indent=1), "utf-8")
-    head = f"건강검진 {now:%Y-%m-%d %H:%M} KST — 경보 {len(alerts)}건"
+    # 코드 버전(VERSION.txt 첫 줄) — PC 가 최신 코드를 받았는지 드라이브만 보고 확인하기 위해. 코드를 고치면 이 파일도 갱신한다.
+    try:
+        ver = (HERE / "VERSION.txt").read_text("utf-8").splitlines()[0].strip()
+    except Exception:
+        ver = "(VERSION.txt 없음 — 업데이트 확인 필요)"
+    head = f"건강검진 {now:%Y-%m-%d %H:%M} KST — 경보 {len(alerts)}건 · 코드 버전 {ver}"
     OUT.write_text("\n".join([head, *alerts, *oks]) + "\n", "utf-8")
     print(head)
     for line in alerts:
