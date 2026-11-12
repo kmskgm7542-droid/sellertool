@@ -9,6 +9,8 @@ echo [%date% %time%] daily_run 시작 >> "%LOG%"
 call :find_node
 
 rem 1) 수집: 게시판·텔레그램·방송 자막·방송 타점(직접 기록)
+rem 종목 목록(업비트 원화마켓·코스피·코스닥) 갱신 — 신규 상장 코인·종목이 목록에 없어 '종목코드 입력 필요'로 빠지던 문제. 실패하면 기존 목록 유지
+python -u markets.py >> "%LOG%" 2>&1
 python -u yt_posts.py >> "%LOG%" 2>&1
 python -u tg_collect.py >> "%LOG%" 2>&1
 python -u yt_live.py >> "%LOG%" 2>&1

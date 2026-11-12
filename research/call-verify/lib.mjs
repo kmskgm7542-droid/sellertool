@@ -22,6 +22,8 @@ function blank(s, m) {
 export function normalizePrices(text) {
   let s = String(text);
   while (/(\d),(\d{3})/.test(s)) s = s.replace(/(\d),(\d{3})/, '$1$2');
+  // "51.5~~부근 매수" — 물결이 겹치거나 뒤에 숫자 없이 끝나면 범위가 아니라 강조 → 지운다(진입가를 못 찾던 문제)
+  s = s.replace(/[~～]{2,}/g, '~').replace(/(\d)\s*~(?!\s*\d)/g, '$1');
   // "1억2천만" "1억5백만" "1억2000만" → 원 단위 숫자 (코인 원화 가격)
   s = s.replace(
     /(\d+(?:\.\d+)?)\s*억\s*(\d+(?:\.\d+)?)\s*(천만|백만|만)(?:\s*원)?/g,

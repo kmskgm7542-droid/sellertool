@@ -11,13 +11,33 @@ const DATA = path.join(HERE, 'data');
 const FILE = path.join(DATA, 'aliases.json');
 const EXTRACT_STATE = path.join(DATA, 'extract_state.json');
 
-export function loadUserAliases() {
+// 기본 별칭 — 방송·게시판에서 반복해서 다르게 불리는 이름(자막 대조로 확인한 것만). 봇으로 등록한 별칭이 우선한다.
+//   영문·숫자 약칭(ICTK·LK3), 들리는 대로 적힌 이름(엑시스·오픈 내저), 게시글 오타(크래딧코인)
+export const DEFAULT_ALIASES = {
+  ICTK: '아이씨티케이',
+  LK3: 'LK삼양',
+  'LK 3': 'LK삼양',
+  엑시스로보틱스: '액시스로보틱스',
+  '엑시스 로보틱스': '액시스로보틱스',
+  엑시스: '액시스로보틱스',
+  오픈내저: '오픈렛저',
+  '오픈 내저': '오픈렛저',
+  크래딧코인: '크레딧코인',
+};
+
+// 봇으로 등록한 별칭(data/aliases.json)만 — 등록·삭제·목록용
+function readUserFile() {
   try {
     const j = JSON.parse(fs.readFileSync(FILE, 'utf8'));
     return j && typeof j === 'object' ? j : {};
   } catch {
     return {};
   }
+}
+
+// 추출·원장 파싱에 쓰는 별칭: 기본 별칭 + 봇 등록 별칭(등록한 쪽이 우선)
+export function loadUserAliases() {
+  return { ...DEFAULT_ALIASES, ...readUserFile() };
 }
 
 function save(a) {
@@ -32,14 +52,14 @@ function save(a) {
 }
 
 export function addAlias(from, to) {
-  const a = loadUserAliases();
+  const a = readUserFile();
   a[from] = to;
   save(a);
   return a;
 }
 
 export function removeAlias(from) {
-  const a = loadUserAliases();
+  const a = readUserFile();
   const had = from in a;
   delete a[from];
   if (had) save(a);

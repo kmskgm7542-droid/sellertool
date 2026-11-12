@@ -42,6 +42,12 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
   ok(p.horizonDays === RULES.defaultDays && p.flags.includes('기간 표기 없음(기본값)'), '"20일선"을 기간으로 오인하지 않음');
   ok(p.stopBasis === 'TOUCH' && p.flags.includes('손절 기준 미명시(터치 적용)'), '손절 기준 미명시 → 터치 + 검토 표시');
 }
+{
+  const p = parseCall('샘플코인 51.5~~부근 매수 47.8 손절 80원목표 2주', RULES);
+  ok(p.name === '샘플코인' && p.entryMode === 'PRICE' && p.entry === 51.5 && p.sl === 47.8 && p.tps[0]?.price === 80, '겹친 물결("51.5~~부근 매수") → 진입가 인식');
+  const q = parseCall('샘플코인 40~42원 매수 38 손절 50 목표', RULES);
+  ok(q.entry === 42 && q.sl === 38, '물결 범위 진입("40~42원")은 그대로 범위로 인식');
+}
 
 // ───────── 시뮬레이터 (1시간봉, 비용 0) ─────────
 const T0 = Date.UTC(2025, 0, 6, 0, 0) / 1000; // UTC 00시 정렬(업비트 일봉 마감과 일치)

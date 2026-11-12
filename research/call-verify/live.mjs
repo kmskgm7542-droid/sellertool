@@ -33,7 +33,7 @@ function makeLookup() {
   const fn = (raw) => {
     const name = alias[raw] ?? raw;
     if (!name) return null;
-    if (/^\d{6}$/.test(name)) return ['KRX', name];
+    if (/^\d[0-9A-Z]{5}$/.test(name)) return ['KRX', name]; // 2024년 이후 신규 상장은 영문 섞인 코드(예: 0126Z0)
     if (upbit[name]) return ['UPBIT', upbit[name]];
     if (krx[name]) return ['KRX', krx[name]];
     // 직접 입력한 이름은 줄임말("엑시" → 엑시인피니티)만 허용. 반대 방향("테스트종목" → 테스)은 오인이라 쓰지 않는다.

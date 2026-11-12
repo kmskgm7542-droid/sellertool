@@ -106,7 +106,7 @@ async function cmdParse(file) {
   const lookup = (raw, strict = false) => {
     const name = userAlias[raw] ?? raw;
     if (!name) return null;
-    if (/^\d{6}$/.test(name)) return ['KRX', name];
+    if (/^\d[0-9A-Z]{5}$/.test(name)) return ['KRX', name]; // 2024년 이후 신규 상장은 영문 섞인 코드(예: 0126Z0)
     if (upbit.has(name)) return ['UPBIT', upbit.get(name)];
     if (krx.has(name)) return ['KRX', krx.get(name)];
     // 부분 일치(예: "엑시" → "엑시인피니티"): 유일할 때만

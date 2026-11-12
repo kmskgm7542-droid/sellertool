@@ -17,10 +17,11 @@ const DATA = path.join(HERE, 'data');
 const VOD = path.join(DATA, 'live_vod');
 const FILE = path.join(DATA, 'live_calls.json');
 const STATE = path.join(DATA, 'extract_state.json');
+const REVIEW = path.join(DATA, 'vod_review.txt'); // 매수 표현이 없어 탈락했지만 손절·가격이 함께 나온 지점(사람이 확인)
 const CHANNEL = '방송(자동추출)';
 const BEFORE = 2; // 창: 이름이 나온 자막 앞 2구간
 const AFTER = 8; //     뒤 8구간(약 1~2분)
-const RULES_VERSION = 4; // 추출 규칙이 바뀌면 올린다 → 기존 자동추출 기록을 지우고 전체를 다시 뽑는다
+const RULES_VERSION = 5; // 추출 규칙이 바뀌면 올린다 → 기존 자동추출 기록을 지우고 전체를 다시 뽑는다
 
 // 일상어와 같은 코인 이름 — "구간인지를 보라는 거지", "리스크를 줄이는" 처럼 말에 섞여 오탐이 잦다.
 // 같은 창 안에 '코인'이라는 말이 함께 나올 때만 종목으로 본다.
@@ -128,6 +129,33 @@ export function extractFromSegments(segs, nameRe, rules = RULES) {
   return found;
 }
 
+// 검토 후보 — 명시적 매수 표현이 없어 자동추출에서는 탈락했지만, 이름 뒤 약 2분 안에 손절과 가격 숫자가 함께 나오는 지점.
+// 방송에서 "오늘 일봉 시가 손절 잡고 참고하실 분들은…", "요게 실패하면 손절, 성공하면 150원"처럼 분석 형식으로 주는 타점이 여기 걸린다.
+// 장부에는 넣지 않고 목록으로만 남긴다(대표가 보고 맞으면 봇으로 기록). 시황 대표 종목·복기·보유 표현은 뺀다.
+const MARKET_TALK = new Set(['비트코인', '이더리움', '삼성전자', 'SK하이닉스']);
+export function findReviewCandidates(segs, nameRe) {
+  const out = [];
+  const last = new Map();
+  for (let i = 0; i < segs.length; i++) {
+    const m = segs[i].text.match(nameRe);
+    if (!m) continue;
+    const raw = [...new Set(m)][0];
+    const name = ALIASES[raw] ?? raw;
+    if (MARKET_TALK.has(name)) continue;
+    const near = segs.slice(Math.max(0, i - 1), i + 4).map((s) => s.text).join(' ');
+    if (BUY_CUE.test(near) || PAST_CUE.test(near) || NOT_CALL_CUE.test(near)) continue;
+    if (AMBIGUOUS.has(raw) && !/코인/.test(near)) continue;
+    const win = segs.slice(Math.max(0, i - 1), i + 9).map((s) => s.text).join(' ');
+    if (PAST_CUE.test(win)) continue;
+    const nt = normalizeSpeech(win);
+    if (!/손절/.test(nt) || !/\d{2,}/.test(nt.replace(nameRe, ' '))) continue;
+    if (last.has(name) && segs[i].t - last.get(name) < 600) continue; // 같은 종목은 10분에 한 번만
+    last.set(name, segs[i].t);
+    out.push({ name, t: segs[i].t, quote: win.slice(0, 160) });
+  }
+  return out;
+}
+
 async function main() {
   const dry = process.argv.includes('--dry');
   const user = loadUserAliases();
@@ -148,6 +176,7 @@ async function main() {
   const todo = fs.readdirSync(VOD).filter((f) => f.endsWith('.json') && !state.videos[f.slice(0, -5)]);
   if (!todo.length) { console.log('새 방송 자막이 없습니다.'); return; }
   const summary = [];
+  const review = [];
   for (const f of todo) {
     const id = f.slice(0, -5);
     const v = readJson(path.join(VOD, f), {});
@@ -165,14 +194,25 @@ async function main() {
       });
     });
     console.log(`  → 타점 후보 ${found.length}건${dry ? ' (dry)' : ' 기록'}`);
+    for (const r of findReviewCandidates(segs, nameRe)) {
+      const t = start ? start + Math.floor(r.t) : 0;
+      review.push(`${t ? kst(t) : '시각미상'} | ${r.name} | ${(v.title || id).slice(0, 30)} | ${r.quote}`);
+    }
     if (!dry) state.videos[id] = { calls: found.length, at: new Date().toISOString(), title: v.title, mode: 'rules' };
   }
   if (!dry) {
     fs.writeFileSync(FILE, JSON.stringify(live, null, 1));
     fs.writeFileSync(STATE, JSON.stringify(state, null, 1));
+    if (review.length) {
+      // 최근 200줄만 유지(새 방송분이 아래에 붙는다). 콜 원문 일부라 data/ 안에만 둔다.
+      const prev = fs.existsSync(REVIEW) ? fs.readFileSync(REVIEW, 'utf8').split('\n').filter(Boolean) : [];
+      fs.writeFileSync(REVIEW, [...prev, ...review].slice(-200).join('\n') + '\n');
+    }
   }
-  if (!summary.length) { console.log('숫자로 제시된 타점을 찾지 못했습니다.'); return; }
-  const text = `📺 방송 자막 자동추출(규칙) 타점\n${summary.slice(0, 30).join('\n')}\n\n자막 오인이 있을 수 있어요. 틀린 건 '취소 <종목>' 으로 지우세요.`;
+  if (review.length) console.log(`검토 후보(매수 표현 없이 손절·가격만 나온 지점) ${review.length}건 → ${REVIEW}`);
+  if (!summary.length && !review.length) { console.log('숫자로 제시된 타점을 찾지 못했습니다.'); return; }
+  const reviewNote = review.length ? `\n\n🔎 검토 후보 ${review.length}건(분석형 타점일 수 있음 — 맞으면 봇에 직접 기록):\n${review.slice(0, 8).map((l) => '· ' + l.split(' | ').slice(0, 2).join(' ')).join('\n')}` : '';
+  const text = `📺 방송 자막 자동추출(규칙) 타점\n${summary.slice(0, 30).join('\n')}${reviewNote}\n\n자막 오인이 있을 수 있어요. 틀린 건 '취소 <종목>' 으로 지우세요.`;
   if (dry) console.log(text);
   else console.log((await notifyText(text)) ? '텔레그램 요약 전송' : '(텔레그램 봇 미설정 — 요약 생략)');
 }
