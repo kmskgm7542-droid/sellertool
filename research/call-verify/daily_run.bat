@@ -9,6 +9,8 @@ echo [%date% %time%] daily_run 시작 >> "%LOG%"
 call :find_node
 
 rem 1) 수집: 게시판·텔레그램·방송 자막·방송 타점(직접 기록)
+rem 종목 목록(업비트 원화마켓·코스피·코스닥) 갱신 — 신규 상장 코인·종목이 목록에 없어 '종목코드 입력 필요'로 빠지던 문제. 실패하면 기존 목록 유지
+python -u markets.py >> "%LOG%" 2>&1
 python -u yt_posts.py >> "%LOG%" 2>&1
 python -u tg_collect.py >> "%LOG%" 2>&1
 python -u yt_live.py >> "%LOG%" 2>&1
@@ -38,6 +40,8 @@ if exist data\site.json python -u publish.py >> "%LOG%" 2>&1
 if exist data\tg_bot.json python -u notify.py --daily >> "%LOG%" 2>&1
 
 :export
+rem 3) 건강검진: 수집·추출·검증이 조용히 실패하지 않았는지 숫자로 확인 → data\health.txt (드라이브에 함께 올라감)
+python -u health.py >> "%LOG%" 2>&1
 python -u export_drive.py >> "%LOG%" 2>&1
 echo [%date% %time%] daily_run 끝 >> "%LOG%"
 exit /b 0

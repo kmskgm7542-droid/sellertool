@@ -63,7 +63,28 @@ def naver_daily(code, count):
         d = m.group(1)
         t = int(datetime(int(d[:4]), int(d[4:6]), int(d[6:8]), tzinfo=timezone.utc).timestamp()) - 9 * 3600
         rows.append([t, float(m.group(2)), float(m.group(3)), float(m.group(4)), float(m.group(5))])
+    if not rows:
+        rows = naver_daily_mobile(code, count)
     return sorted(rows)
+
+
+def naver_daily_mobile(code, count):
+    """예비 경로 — 신규 상장(영문 섞인 코드, 예: 0126Z0)은 fchart 가 빈 응답을 준다. 모바일 일별 시세를 페이지로 받는다."""
+    num = lambda v: float(str(v).replace(",", ""))  # noqa: E731
+    rows, page = [], 1
+    while len(rows) < count and page <= 40:
+        items = get(f"https://m.stock.naver.com/api/stock/{code}/price?pageSize=60&page={page}")
+        if not items:
+            break
+        for it in items:
+            y, mo, d = (int(x) for x in it["localTradedAt"][:10].split("-"))
+            t = int(datetime(y, mo, d, tzinfo=timezone.utc).timestamp()) - 9 * 3600
+            rows.append([t, num(it["openPrice"]), num(it["highPrice"]), num(it["lowPrice"]), num(it["closePrice"])])
+        if len(items) < 60:
+            break
+        page += 1
+        time.sleep(0.1)
+    return rows
 
 
 def main():

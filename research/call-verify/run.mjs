@@ -106,7 +106,7 @@ async function cmdParse(file) {
   const lookup = (raw, strict = false) => {
     const name = userAlias[raw] ?? raw;
     if (!name) return null;
-    if (/^\d{6}$/.test(name)) return ['KRX', name];
+    if (/^\d[0-9A-Z]{5}$/.test(name)) return ['KRX', name]; // 2024년 이후 신규 상장은 영문 섞인 코드(예: 0126Z0)
     if (upbit.has(name)) return ['UPBIT', upbit.get(name)];
     if (krx.has(name)) return ['KRX', krx.get(name)];
     // 부분 일치(예: "엑시" → "엑시인피니티"): 유일할 때만
@@ -192,9 +192,10 @@ function cmdMerge() {
   let resolved = 0;
   for (const r of draft) {
     if (known.has(r.id)) {
-      // 종목코드가 비어 있던 행이 이번 파싱에서 찾아졌으면(별칭 등록·종목 목록 갱신) 코드만 채운다. 사람이 고친 값은 그대로.
+      // 종목코드가 비어 있던 행(아직 검증에 못 쓰인 행)은 이번 파싱 결과로 통째로 바꾼다
+      // — 별칭 등록·종목 목록 갱신·파서 개선(매수 앞 손절, 글머리 종목명)이 반영되도록. 코드가 있는 행(사람이 고친 값 포함)은 그대로.
       const k = ledger.find((x) => x.id === r.id);
-      if (k && !k.symbol && r.symbol) { k.market = r.market; k.symbol = r.symbol; k.ok = r.ok; k.flags = r.flags; resolved++; }
+      if (k && !k.symbol && r.symbol) { Object.assign(k, r); resolved++; }
       continue;
     }
     if (isDup(r) || /부정확/.test(r.flags)) continue;

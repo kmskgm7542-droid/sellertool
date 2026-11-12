@@ -25,11 +25,28 @@ const near = (a, b, eps = 1e-6) => Math.abs(a - b) < eps;
   ok(p.stopBasis === 'CLOSE' && p.stopHours === 24, '주식형: 일봉 종가 손절');
 }
 {
+  const p = parseCall('샘플코인 설명드린대로 다시 회복하는 모양세죠 4시간 종가로 65.8 이탈컷잡고 71~70원 매수 1~2주 단기로는 90원 목표가', RULES);
+  ok(p.ok && p.name === '샘플코인' && p.entry === 71 && p.sl === 65.8 && p.tps[0].price === 90, '매수 앞 손절·글머리 종목명');
+  ok(p.stopBasis === 'CLOSE' && p.stopHours === 4 && p.horizonDays === 14, '매수 앞 손절: 4시간 종가·기간 2주');
+  const q = parseCall('가상종목 다시 폼좋아지네요 96원아래 매수 90손절잡고 스윙으론180노려볼 자리', RULES);
+  ok(q.ok && q.name === '가상종목' && q.sl === 90, '서술어("…네요")를 종목명으로 오인하지 않음');
+  const r = parseCall('회원 가상헬스 현재가 6450부근 매수 6200이탈마감 컷잡고 8900원 2~4주', RULES);
+  ok(r.ok && r.name === '가상헬스', '"현재가"를 종목명("현재")으로 오인하지 않음');
+  const s = parseCall('가상토큰 550원매수 530원일봉종가 이탈컷잡고 650원 노려볼수있는자리', RULES);
+  ok(s.ok && s.sl === 530 && s.stopBasis === 'CLOSE', '"530원일봉종가 이탈컷" 띄어쓰기 손절');
+}
+{
   ok(normalizePrices('2만5천원 매수, 1,250원') === '25000원 매수, 1250원', '복합 단위·쉼표 정규화');
   const p = parseCall('테스트 2만5천원 매수 2만3천 손절 3만원 목표 20일선 지지', RULES);
   ok(p.entry === 25000 && p.sl === 23000 && p.tps[0].price === 30000, '복합 단위 가격 인식');
   ok(p.horizonDays === RULES.defaultDays && p.flags.includes('기간 표기 없음(기본값)'), '"20일선"을 기간으로 오인하지 않음');
   ok(p.stopBasis === 'TOUCH' && p.flags.includes('손절 기준 미명시(터치 적용)'), '손절 기준 미명시 → 터치 + 검토 표시');
+}
+{
+  const p = parseCall('샘플코인 51.5~~부근 매수 47.8 손절 80원목표 2주', RULES);
+  ok(p.name === '샘플코인' && p.entryMode === 'PRICE' && p.entry === 51.5 && p.sl === 47.8 && p.tps[0]?.price === 80, '겹친 물결("51.5~~부근 매수") → 진입가 인식');
+  const q = parseCall('샘플코인 40~42원 매수 38 손절 50 목표', RULES);
+  ok(q.entry === 42 && q.sl === 38, '물결 범위 진입("40~42원")은 그대로 범위로 인식');
 }
 
 // ───────── 시뮬레이터 (1시간봉, 비용 0) ─────────
@@ -155,6 +172,19 @@ const N = 24 * 20;
   // 마감 후 지정가: 기준가는 그날 종가(1020) → 1000 은 아래(LIMIT). 다음 날 저가 1025 미도달, 그다음 날 저가 990 → 체결
   const lim = simulate({ ...call, entryMode: 'PRICE', entry: 1000, tPost: T1 + 3 * D + 16 * 3600 }, bars, D, RULES, zero);
   ok(lim.mode === 'LIMIT' && lim.pf === 1000 && lim.tFill === T1 + 5 * D, '일봉·장 마감 후 지정가 → 기준가는 그날 종가, 이틀 뒤 체결');
+}
+
+{
+  // 자막 자동추출: 비율(0.5%)은 가격이 아니고, "23만 5,000원"은 한 숫자, 방송자가 "추천 안 합니다"라고 밝힌 설명은 뽑지 않는다
+  const { normalizeSpeech, extractFromSegments } = await import('./extract_rules.mjs');
+  const n = normalizeSpeech('가나다 23만 5,000원까지 가고 0.5% 손절');
+  ok(/235000원/.test(n) && !/0\.5/.test(n), '자막: 23만 5,000원 → 235000, 0.5% 제거');
+  const re = /(?<![가-힣A-Za-z0-9])(가나다)/g;
+  const seg = (t, text) => ({ t, text });
+  const said = [seg(0, '추천은 안 합니다 설명만 드리는 거예요'), seg(5, '가나다 여기서 매수 해 볼 수 있는 자리'), seg(10, '손절 1000원 목표 1500원')];
+  ok(extractFromSegments(said, re).length === 0, '자막: "추천 안 합니다" 설명은 콜로 뽑지 않음');
+  const call = [seg(0, '가나다 지금 매수 괜찮아 보입니다'), seg(5, '손절 1000원 목표 1500원')];
+  ok(extractFromSegments(call, re).length === 1, '자막: 일반 콜은 그대로 뽑음');
 }
 
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
