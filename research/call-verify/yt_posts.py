@@ -126,6 +126,12 @@ async def main():
 
         ctx, page = await open_page()
 
+        if not cfg.get("logged_in") and not sys.stdin.isatty():
+            # 예약 실행(창 없음)에서는 Enter 를 기다리면 매일 실행 전체가 멈춘다 → 알리고 건너뛴다
+            from yt_login import alert_login_lost
+            alert_login_lost(DATA, "게시판 수집 — 첫 로그인 필요")
+            await ctx.close()
+            return
         if not cfg.get("logged_in"):
             print("\n브라우저 창에서 유튜브에 로그인하세요 (멤버십 가입된 구글 계정).")
             print("★ 브라우저 창은 닫지 마세요. 로그인이 끝나면 이 검은 창으로 돌아와 Enter 만 누르세요.")

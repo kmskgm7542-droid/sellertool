@@ -124,7 +124,12 @@ async def main():
         await page.goto(url, wait_until="domcontentloaded")
         await page.wait_for_timeout(4000)
         if "accounts.google.com" in page.url:
-            print("✖ 브라우저가 구글에 로그인되어 있지 않습니다. yt_posts.bat 을 실행해 로그인한 뒤 다시 시도하세요.")
+            print("✖ 브라우저가 구글에 로그인되어 있지 않습니다. yt_relogin.bat 을 실행해 로그인한 뒤 다시 시도하세요.")
+            try:  # 업로드가 멈추면 김이사가 결과를 못 보므로 텔레그램으로 바로 알린다(하루 한 번)
+                from yt_login import alert_login_lost
+                alert_login_lost(DATA, "드라이브 업로드")
+            except Exception:
+                pass
             await ctx.close()
             sys.exit(1)
         seen = 0
