@@ -17,6 +17,26 @@ from yt_login import login_state  # noqa: E402
 FOLDER_ID = "1y3fcTU5lVLusZEuFVbIENZrQoATdz62E"
 
 
+async def safe_goto(page, url, wait=4000):
+    """구글이 비밀번호 변경·본인 확인 화면으로 돌려보내면 이동이 '중단'되며 예외가 난다 → 무시하고 현재 화면을 쓴다."""
+    try:
+        await page.goto(url, wait_until="domcontentloaded")
+    except Exception:
+        pass
+    await page.wait_for_timeout(wait)
+
+
+def google_block(url: str) -> str:
+    """구글이 로그인 대신 요구하는 화면이면 그 이름(한국어), 아니면 ''."""
+    if "accounts.google.com" not in url:
+        return ""
+    if "changepassword" in url or "speedbump" in url:
+        return "비밀번호 변경 요구(구글 보안 조치)"
+    if "challenge" in url:
+        return "본인 확인(2단계 인증) 요구"
+    return "로그인 화면"
+
+
 async def main():
     from playwright.async_api import async_playwright
     cfg = json.loads((DATA / "drive.json").read_text("utf-8")) if (DATA / "drive.json").exists() else {}
@@ -27,23 +47,31 @@ async def main():
             args=["--disable-blink-features=AutomationControlled"],
         )
         page = ctx.pages[0] if ctx.pages else await ctx.new_page()
-        await page.goto("https://www.youtube.com/", wait_until="domcontentloaded")
-        await page.wait_for_timeout(4000)
+        await safe_goto(page, "https://www.youtube.com/")
         before = await login_state(page)
         print(f"현재 유튜브 로그인 상태: {'로그인됨' if before == 'in' else '풀림' if before == 'out' else '확인 불가'}")
         if before != "in":
-            await page.goto("https://accounts.google.com/ServiceLogin?continue=https://www.youtube.com/", wait_until="domcontentloaded")
-        print("\n브라우저 창에서 멤버십에 가입된 구글 계정으로 로그인하세요(이미 로그인돼 있으면 그대로 두세요).")
-        print("★ 브라우저 창은 닫지 마세요. 끝나면 이 검은 창으로 돌아와 Enter 를 누르세요.")
-        input()
-        if page.is_closed():
-            page = await ctx.new_page()
-        await page.goto("https://www.youtube.com/", wait_until="domcontentloaded")
-        await page.wait_for_timeout(4000)
-        yt = await login_state(page)
-        await page.goto(f"https://drive.google.com/drive/folders/{folder}", wait_until="domcontentloaded")
-        await page.wait_for_timeout(5000)
-        drive_ok = "accounts.google.com" not in page.url
+            await safe_goto(page, "https://accounts.google.com/ServiceLogin?continue=https://www.youtube.com/", 2000)
+        yt, drive_ok = "unknown", False
+        for attempt in range(1, 4):
+            print("\n브라우저 창에서 멤버십에 가입된 구글 계정으로 로그인하세요(이미 로그인돼 있으면 그대로 두세요).")
+            print("  · 구글이 '비밀번호 변경'이나 '본인 확인'을 요구하면 그 화면에서 끝까지 마치세요.")
+            print("★ 브라우저 창은 닫지 마세요. 끝나면 이 검은 창으로 돌아와 Enter 를 누르세요.")
+            input()
+            if page.is_closed():
+                page = await ctx.new_page()
+            block = google_block(page.url)
+            if block and attempt < 3:
+                print(f"\n아직 구글 화면에 있습니다: {block}. 브라우저에서 마저 진행한 뒤 Enter 를 누르세요.")
+                continue
+            await safe_goto(page, "https://www.youtube.com/")
+            yt = await login_state(page)
+            await safe_goto(page, f"https://drive.google.com/drive/folders/{folder}", 5000)
+            drive_ok = "accounts.google.com" not in page.url
+            if (yt == "in" and drive_ok) or attempt == 3:
+                break
+            print(f"\n아직 로그인이 확인되지 않습니다(유튜브 {yt}, 드라이브 {'열림' if drive_ok else '로그인 필요'}). 브라우저에서 로그인을 마친 뒤 Enter 를 누르세요.")
+            await safe_goto(page, "https://accounts.google.com/ServiceLogin?continue=https://www.youtube.com/", 2000)
         await ctx.close()
     print()
     print(f"유튜브: {'✅ 로그인됨' if yt == 'in' else '✖ 로그인 안 됨' if yt == 'out' else '? 화면 확인 불가'}")
