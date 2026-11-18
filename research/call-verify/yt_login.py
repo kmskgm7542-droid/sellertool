@@ -32,7 +32,9 @@ async def login_state(page):
 def alert_login_lost(data_dir: Path, where: str):
     """오늘 처음이면 텔레그램으로 알린다. 봇이 없으면 화면에만."""
     msg = (f"⚠ 유튜브 로그인이 풀렸습니다({where}). 멤버십 방송·게시판을 읽지 못합니다.\n"
-           "PC에서 yt_posts.bat 을 한 번 실행해 브라우저 창에서 다시 로그인하고 Enter 를 누르세요.")
+           "게시판 수집·방송 자막·드라이브 업로드가 모두 멈춥니다(같은 로그인 사용).\n"
+           "PC에서 call-verify 폴더의 yt_relogin.bat 을 실행해 브라우저 창에서 다시 로그인하고 Enter 를 누르세요"
+           "(자동 실행 시간 평일 14:40~16:50, 매일 18:30·21:30 은 피해서).")
     print(msg)
     marker = data_dir / "yt_login_alert.json"
     today = date.today().isoformat()
