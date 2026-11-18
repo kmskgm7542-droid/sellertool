@@ -13,6 +13,7 @@
     7 종목 목록·디스크   7일 넘게 갱신 안 됨, 업비트 50·국내 500종목 미만, data 드라이브·C 드라이브 여유 5GB 미만
     8 오류 로그         이번 실행 daily.log, 지난 드라이브 업로드 로그에 오류·실패
     9 검증 대상 수      전날보다 줄어듦
+   10 자동 업데이트     2일 넘게 기록 없음, 실패·충돌
 """
 import csv
 import json
@@ -226,6 +227,22 @@ def main():
     else:
         ok("오류 로그: 없음")
 
+    # 10) 자동 업데이트(예약작업 CallVerifyUpdate → data/update.log)
+    ul = DATA / "update.log"
+    if ul.exists():
+        body = ul.read_text("utf-8", errors="replace")
+        last = body[body.rfind("자동 업데이트 시작"):] if "자동 업데이트 시작" in body else body[-3000:]
+        age_d = (now.timestamp() - ul.stat().st_mtime) / 86400
+        bad = [ln.strip()[:80] for ln in last.splitlines() if re.search(r"실패|오류|Error|충돌|중단", ln)]
+        if age_d > 2:
+            warn(f"자동 업데이트: {age_d:.0f}일째 기록 없음 — 예약작업 CallVerifyUpdate 확인(schedule_all.bat 재실행)")
+        elif bad:
+            warn("자동 업데이트: " + " / ".join(bad[:2]))
+        else:
+            ok("자동 업데이트: 정상(" + datetime.fromtimestamp(ul.stat().st_mtime, KST).strftime("%m-%d %H:%M") + ")")
+    else:
+        ok("자동 업데이트: 아직 기록 없음(schedule_all.bat 등록 전)")
+
     # 9) 검증 대상 수
     usable = sum(1 for r in ledger if r.get("ok") == "1")
     hist = st.setdefault("usable", {})
@@ -250,6 +267,15 @@ def main():
     print(head)
     for line in alerts:
         print(" ", line)
+    if "--notify" in sys.argv:
+        # 매일 밤 실행 결과를 텔레그램으로 — 대표가 아침마다 직접 확인하지 않아도 되게(알림이 안 오면 실행이 안 된 것)
+        msg = "\n".join([("✅ " if not alerts else "⚠ ") + "콜 검증 매일 실행 완료 · " + head, *alerts[:5]])
+        if (DATA / "tg_bot.json").exists():
+            try:
+                import subprocess
+                subprocess.run([sys.executable, str(HERE / "notify.py"), msg], timeout=60)
+            except Exception as exc:
+                print(f"  (텔레그램 전송 실패: {type(exc).__name__})")
 
 
 if __name__ == "__main__":

@@ -41,7 +41,7 @@ if exist data\tg_bot.json python -u notify.py --daily >> "%LOG%" 2>&1
 
 :export
 rem 3) 건강검진: 수집·추출·검증이 조용히 실패하지 않았는지 숫자로 확인 → data\health.txt (드라이브에 함께 올라감)
-python -u health.py >> "%LOG%" 2>&1
+python -u health.py --notify >> "%LOG%" 2>&1
 python -u export_drive.py >> "%LOG%" 2>&1
 echo [%date% %time%] daily_run 끝 >> "%LOG%"
 exit /b 0
