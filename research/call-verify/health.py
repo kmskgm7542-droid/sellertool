@@ -32,7 +32,7 @@ CALL_WORDS = re.compile(r"매수|손절|목표|익절|진입|잡아|사도|사�
 STOP = {
     "AI", "ETF", "ETN", "KOSPI", "KOSDAQ", "USA", "US", "MACD", "RSI", "OBV", "CCI", "BB", "MA", "EMA", "SMA", "PER",
     "PBR", "ROE", "EPS", "IPO", "CEO", "CPI", "PPI", "FOMC", "FED", "GDP", "OK", "TV", "PC", "LIVE", "VIP", "NFT", "DEX",
-    "IT", "VS", "AM", "PM", "KRW", "USD", "USDT", "ATH", "TP", "SL", "AI의", "YOLO", "MVRV", "HTS", "MTS", "DM", "Q", "WTI", "SNS", "PD",
+    "IT", "VS", "AM", "PM", "KRW", "USD", "USDT", "ATH", "TP", "SL", "AI의", "YOLO", "MVRV", "HTS", "MTS", "DM", "Q", "WTI", "SNS", "PD", "ABC",
 }
 
 
@@ -173,7 +173,7 @@ def main():
         ok(f"게시판 → 장부: 최근 3일 빠진 글 없음(게시글 {len(posts)}건)")
 
     # 6) 종목코드 없음
-    nocode = [r for r in ledger if "종목코드 입력 필요" in (r.get("flags") or "")]
+    nocode = [r for r in ledger if "종목코드 입력 필요" in (r.get("flags") or "") and (r.get("name") or "").strip()]
     if nocode:
         warn(f"종목코드 없음: 장부 {len(nocode)}행 — " + ", ".join(f"{r['id']} {r.get('name') or '(종목?)'}" for r in nocode[:6]))
     else:
@@ -228,12 +228,12 @@ def main():
         ok("오류 로그: 없음")
 
     # 10) 자동 업데이트(예약작업 CallVerifyUpdate → data/update.log)
-    ul = DATA / "update.log"
+    ul = DATA / "auto_update.log"  # auto_update.bat 이 남기는 기록(도구 자체 기록 update.log 와 별개)
     if ul.exists():
         body = ul.read_text("utf-8", errors="replace")
         last = body[body.rfind("자동 업데이트 시작"):] if "자동 업데이트 시작" in body else body[-3000:]
         age_d = (now.timestamp() - ul.stat().st_mtime) / 86400
-        bad = [ln.strip()[:80] for ln in last.splitlines() if re.search(r"실패|오류|Error|충돌|중단", ln)]
+        bad = [ln.strip()[:80] for ln in last.splitlines() if re.search(r"실패|오류|Error|충돌|중단|종료코드 [1-9]", ln)]
         if age_d > 2:
             warn(f"자동 업데이트: {age_d:.0f}일째 기록 없음 — 예약작업 CallVerifyUpdate 확인(schedule_all.bat 재실행)")
         elif bad:
