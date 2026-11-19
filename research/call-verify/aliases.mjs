@@ -28,6 +28,7 @@ export const DEFAULT_ALIASES = {
   '아시안 IDT': '아시아나IDT',
   'DND 파마텍': '디앤디파마텍',
   DND파마텍: '디앤디파마텍',
+  B3: '비쓰리',
 };
 
 // 봇으로 등록한 별칭(data/aliases.json)만 — 등록·삭제·목록용
