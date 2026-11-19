@@ -110,6 +110,8 @@ def main():
             age_h = (datetime.now(timezone.utc) - datetime.fromisoformat(v["first_seen"])).total_seconds() / 3600
         except Exception:
             continue
+        if age_h > 7 * 24:
+            continue  # 일주일 넘은 방송은 유튜브가 자막을 만들지 않은 것으로 보고 더 알리지 않는다(이미 경보로 보고됨)
         if age_h > 30:
             late.append(f"{(v.get('title') or vid)[:30]}({age_h / 24:.1f}일{', 재시도 종료' if age_h > 72 else ''})")
     if late:
@@ -241,7 +243,7 @@ def main():
         else:
             ok("자동 업데이트: 정상(" + datetime.fromtimestamp(ul.stat().st_mtime, KST).strftime("%m-%d %H:%M") + ")")
     else:
-        ok("자동 업데이트: 아직 기록 없음(schedule_all.bat 등록 전)")
+        ok("자동 업데이트: 아직 기록 없음(첫 자동 업데이트 18:10 전이거나 schedule_all.bat 미등록)")
 
     # 9) 검증 대상 수
     usable = sum(1 for r in ledger if r.get("ok") == "1")
