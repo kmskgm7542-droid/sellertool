@@ -245,8 +245,25 @@ def main():
     else:
         ok("자동 업데이트: 아직 기록 없음(첫 자동 업데이트 18:10 전이거나 schedule_all.bat 미등록)")
 
+    # 11) 관심종목 가격 확인(예약작업 CallVerifyWatch → data/watch.log). 관심종목이 있을 때만 본다.
+    wl = load(DATA / "watchlist.json", {})
+    act = [x for x in wl.get("items", []) if x.get("status") != "closed"]
+    if act:
+        wlog = DATA / "watch.log"
+        beat = DATA / "watch_heartbeat.txt"  # watch.mjs 가 실행될 때마다(장 시간이 아니어도) 갱신
+        nocode = [x["name"] for x in act if not x.get("symbol")]
+        age_h = (now.timestamp() - beat.stat().st_mtime) / 3600 if beat.exists() else None
+        tail = wlog.read_text("utf-8", errors="replace").splitlines()[-30:] if wlog.exists() else []
+        fails = [ln for ln in tail if "실패" in ln or "✖" in ln]
+        if age_h is None or age_h > 3:
+            warn("관심종목 가격 확인: " + ("기록 없음" if age_h is None else f"{age_h:.0f}시간째 기록 없음") + " — 예약작업 CallVerifyWatch 확인(schedule_all.bat 재실행)")
+        elif len(fails) >= 5:
+            warn(f"관심종목 가격 확인: 최근 실패 {len(fails)}건 — {fails[-1][-70:]}")
+        else:
+            ok(f"관심종목: {len(act)}개 추적 · 후보 {len(wl.get('candidates', []))}건" + (f" · 코드 미확인 {', '.join(nocode[:3])}" if nocode else ""))
+
     # 9) 검증 대상 수
-    usable = sum(1 for r in ledger if r.get("ok") == "1")
+    usable =sum(1 for r in ledger if r.get("ok") == "1")
     hist = st.setdefault("usable", {})
     prev = [hist[d] for d in sorted(hist) if d < today]
     hist[today] = usable

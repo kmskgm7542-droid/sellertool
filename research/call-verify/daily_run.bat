@@ -21,6 +21,10 @@ if exist data\anthropic.json (
 ) else (
   if defined NODE "%NODE%" extract_rules.mjs >> "%LOG%" 2>&1
 )
+rem 관심종목: 방송·게시판에서 강조된 종목을 후보로 올려 텔레그램으로 알림(대표가 "관심 승인 번호"로 확정)
+if defined NODE "%NODE%" watch_scan.mjs >> "%LOG%" 2>&1
+rem 관심종목 가격 확인 예약작업이 없으면 등록(업데이트로 새로 생긴 작업 — schedule_all 을 다시 돌리지 않아도 되게)
+schtasks /query /tn CallVerifyWatch >nul 2>&1 || powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0watch_task.ps1" >> "%LOG%" 2>&1
 
 rem 2) 검증: 원장 갱신 → 시세 → 시뮬레이션 → 성적표(웹·HTML) — 매일 갱신해 웹에서 일간으로 확인
 if not defined NODE (

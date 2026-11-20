@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { RULES } from './config.mjs';
 import { parseCall } from './lib.mjs';
 import { addAlias, loadUserAliases, parseAliasCommand, removeAlias } from './aliases.mjs';
+import { HELP as WATCH_HELP, describe, loadWatch, parseWatchCommand, removeItem, saveWatch, upsertItem } from './watchlist.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(HERE, 'data');
@@ -24,7 +25,7 @@ const readJson = (f, d) => (fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'ut
 const kst = (sec) => new Date((sec + 9 * 3600) * 1000).toISOString().replace('T', ' ').slice(0, 16);
 
 // ── 종목 찾기(markets.bat 이 받아둔 목록) ──
-function makeLookup() {
+export function makeLookup() {
   const upbit = readJson(path.join(DATA, 'upbit_markets.json'), {});
   const krx = readJson(path.join(DATA, 'krx_list.json'), {});
   const alias = { 비트: '비트코인', 비코: '비트코인', 이더: '이더리움', 도지: '도지코인', 솔: '솔라나', 하이닉스: 'SK하이닉스', 삼전: '삼성전자', 현차: '현대차' };
@@ -52,6 +53,8 @@ export function interpret(text, lookup = () => null) {
   const t = String(text).trim();
   const cancel = t.match(/^취소(?:\s+(\S+))?$/);
   if (cancel) return { kind: 'cancel', name: cancel[1] ?? null };
+  const wc = parseWatchCommand(t); // 관심종목 장부(검증 원장과 별개)
+  if (wc) return wc;
   const al = parseAliasCommand(t);
   if (al) return al;
   const words = t.split(/\s+/);
@@ -157,12 +160,79 @@ export async function handleUpdate(u, ctx) {
   for (let i = 0; i < lines.length; i++) await handleLine({ ...msg, text: lines[i], message_id: `${msg.message_id}_${i + 1}` }, ctx);
 }
 
+// 관심종목 명령 처리 → 답장 문구. ctx.watchFile 은 시험용(기본 data/watchlist.json)
+export function handleWatch(res, ctx) {
+  const file = ctx.watchFile;
+  const w = loadWatch(file);
+  const active = w.items.filter((x) => x.status !== 'closed');
+  const pick = (ids) => (ids === 'all' ? w.candidates.slice() : w.candidates.filter((c) => ids.includes(c.id)));
+  switch (res.kind) {
+    case 'watch-help': return WATCH_HELP;
+    case 'watch-list': {
+      if (!active.length) return `관심종목이 없습니다.\n${WATCH_HELP}`;
+      const rows = [];
+      for (const t of ['장투', '대기', '관심']) {
+        const g = active.filter((x) => x.tier === t);
+        if (g.length) rows.push(`[${t}] ${g.length}개`, ...g.map((x) => '· ' + describe(x).replace(` [${t}]`, '')));
+      }
+      return `⭐ 관심종목 ${active.length}개${w.candidates.length ? ` (승인 대기 후보 ${w.candidates.length}건: "관심 후보")` : ''}\n${rows.join('\n')}`;
+    }
+    case 'watch-cands':
+      return w.candidates.length
+        ? `⭐ 강조 후보 ${w.candidates.length}건 — 승인: 관심 승인 번호 [매수 …] / 관심 승인 전부, 버림: 관심 버림 번호\n${w.candidates.map((c) => `#${c.id} ${describe(c)} · ${c.src} ${c.date} ×${c.count}`).join('\n')}`
+        : '승인 대기 중인 강조 후보가 없습니다.';
+    case 'watch-del': {
+      const name = ctx.lookup.canonical ? ctx.lookup.canonical(res.name) : res.name;
+      const it = removeItem(w, name);
+      if (it) saveWatch(w, file);
+      return it ? `🗑 관심종목 종료: ${name} (기록은 남고 알림만 멈춥니다)` : `관심종목에 ${name} 이(가) 없습니다.`;
+    }
+    case 'watch-drop': {
+      const drop = new Set(pick(res.ids).map((c) => c.id));
+      w.candidates = w.candidates.filter((c) => !drop.has(c.id));
+      saveWatch(w, file);
+      return drop.size ? `🗑 후보 ${drop.size}건 버림` : '해당 번호의 후보가 없습니다. "관심 후보"로 번호를 확인하세요.';
+    }
+    case 'watch-approve': {
+      const got = pick(res.ids);
+      if (!got.length) return '해당 번호의 후보가 없습니다. "관심 후보"로 번호를 확인하세요.';
+      const one = got.length === 1;
+      const lines = got.map((c) => {
+        const levels = { ...['buy', 'stop', 'line', 'targets', 'breakout'].reduce((o, k) => (c[k] ? { ...o, [k]: c[k] } : o), {}), ...(one ? res.levels : {}) };
+        const it = upsertItem(w, { name: c.name, tier: (one && res.tier) || c.tier, levels, hit: c.market ? [c.market, c.symbol] : ctx.lookup(c.name), source: c.src });
+        it.mentions = (it.mentions || 0) + (c.count || 1);
+        it.last_emphasis = c.date;
+        return '· ' + describe(it);
+      });
+      const done = new Set(got.map((c) => c.id));
+      w.candidates = w.candidates.filter((c) => !done.has(c.id));
+      saveWatch(w, file);
+      return `✅ 관심종목 등록 ${got.length}건\n${lines.join('\n')}${got.some((c) => !c.buy && !c.line && !c.breakout) && !one ? '\n가격이 없는 종목은 알림 없이 추적만 합니다. 가격을 넣으려면: 관심 종목 매수 …' : ''}`;
+    }
+    case 'watch-add': {
+      const name = ctx.lookup.canonical ? ctx.lookup.canonical(res.name) : res.name;
+      const hit = ctx.lookup(name);
+      const it = upsertItem(w, { name, tier: res.tier, levels: res.levels, hit });
+      saveWatch(w, file);
+      const noPrice = !it.buy && !it.line && !it.breakout && !it.stop && !it.targets;
+      return `⭐ 관심종목 ${describe(it)}${hit ? ` (${hit[0] === 'UPBIT' ? '업비트' : '국내주식'} ${hit[1]})` : `\n⚠ "${name}" 종목코드를 못 찾아 가격 알림을 못 보냅니다. 공식 이름으로 다시 보내거나 "별칭 ${res.name}=공식이름" 등록`}${noPrice ? '\n가격 없이 추적만 합니다(알림 없음).' : ''}`;
+    }
+    default: return WATCH_HELP;
+  }
+}
+
 async function handleLine(msg, ctx) {
   const res = interpret(msg.text, ctx.lookup);
   if (res.kind === 'ignore') return;
   if (res.kind === 'cancel') {
     const m = cancelCall(res.name);
     await ctx.reply(m ? `↩ 취소: ${kst(Number(m.date_unixtime))} ${m.name}` : '취소할 기록이 없습니다.');
+    return;
+  }
+  if (res.kind.startsWith('watch-')) {
+    const text = handleWatch(res, ctx);
+    console.log(`[${kst(msg.date)}] 관심종목 ${res.kind}${res.name ? ' ' + res.name : ''}`);
+    await ctx.reply(text);
     return;
   }
   if (res.kind === 'alias-list') {
@@ -199,7 +269,11 @@ async function handleLine(msg, ctx) {
 
 async function main() {
   const args = process.argv.slice(2);
-  const minutes = Number(args[args.indexOf('--minutes') + 1]) || 0;
+  await runBot(Number(args[args.indexOf('--minutes') + 1]) || 0);
+}
+
+// minutes=0: 밀린 메시지만 처리하고 끝(watch.mjs 가 장중 10분마다 불러 관심종목 명령에 빨리 답한다)
+export async function runBot(minutes = 0) {
   const c = botCfg();
   const lookup = makeLookup();
   const ctx = { chatId: c.chat_id, lookup, reply: (text) => api(c, 'sendMessage', { chat_id: c.chat_id, text }) };

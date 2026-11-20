@@ -187,5 +187,65 @@ const N = 24 * 20;
   ok(extractFromSegments(call, re).length === 1, '자막: 일반 콜은 그대로 뽑음');
 }
 
+{
+  // 관심종목 장부: 명령 해석·가격 판정·알림 중복 방지·봇 처리(가상 종목, 임시 파일)
+  const W = await import('./watchlist.mjs');
+  const c = W.parseWatchCommand('관심 가나다전자 대기 매수 15만~16만 손절 14.5만 목표 33만 50만');
+  ok(c.kind === 'watch-add' && c.name === '가나다전자' && c.tier === '대기' && c.levels.buy.join() === '150000,160000'
+    && c.levels.stop.join() === '145000' && c.levels.targets.join() === '330000,500000', '관심: 등록 명령(만 단위·범위·목표 2개)');
+  const d = W.parseWatchCommand('관심 가나비전 장투 기준 28,000');
+  ok(d.tier === '장투' && d.levels.line === 28000 && !d.levels.buy, '관심: 장투·기준선');
+  ok(W.parseWatchCommand('관심 샘플코인 매수 0.95 손절 0.879').levels.buy.join() === '0.95,0.95', '관심: 소수 코인 가격');
+  ok(W.parseWatchCommand('관심').kind === 'watch-list' && W.parseWatchCommand('관심 후보').kind === 'watch-cands', '관심: 목록·후보');
+  const ap = W.parseWatchCommand('관심 승인 3 매수 35만');
+  ok(ap.kind === 'watch-approve' && ap.ids.join() === '3' && ap.levels.buy[0] === 350000, '관심: 승인 번호 + 가격');
+  ok(W.parseWatchCommand('관심 승인 전부').ids === 'all' && W.parseWatchCommand('관심 버림 2,4').ids.join() === '2,4', '관심: 전부 승인·여러 개 버림');
+  ok(W.parseWatchCommand('관심종목 좋아요') === null && W.parseWatchCommand('가나다 1000 매수 손절 900') === null, '관심: 다른 문장은 무시');
+
+  const it = { name: '가나다전자', tier: '대기', buy: [150000, 160000], stop: [145000], targets: [330000] };
+  const keys = (p) => W.evaluate(it, p).map((x) => x.key).join();
+  ok(keys(170000) === '' && keys(164000) === 'near-buy' && keys(155000) === 'buy', '관심: 접근(3%)·매수 구간 도달');
+  ok(keys(140000) === 'stop:145000' && keys(340000) === 'tp:330000', '관심: 손절 이탈이면 매수 알림 대신 손절, 목표 도달');
+  const ln = { name: '가나비전', tier: '장투', line: 28000 };
+  ok(W.evaluate(ln, 28500).map((x) => x.key).join() === 'near-line' && W.evaluate(ln, 27900).map((x) => x.key).join() === 'line', '관심: 기준선 접근·이탈');
+  const bk = { name: '나나차', tier: '관심', breakout: 310000 };
+  ok(W.evaluate(bk, 305000)[0]?.key === 'near-brk' && W.evaluate(bk, 311000)[0]?.key === 'brk', '관심: 돌파 접근·돌파');
+
+  const st = {};
+  const on = W.evaluate(it, 155000);
+  ok(W.newAlerts(st, 'K', on, '2026-01-05').length === 1, '알림: 처음 켜지면 보냄');
+  ok(W.newAlerts(st, 'K', on, '2026-01-05').length === 0, '알림: 켜진 채로면 다시 안 보냄');
+  W.newAlerts(st, 'K', [], '2026-01-05');
+  ok(W.newAlerts(st, 'K', on, '2026-01-05').length === 0, '알림: 같은 날 꺼졌다 켜져도 하루 한 번');
+  W.newAlerts(st, 'K', [], '2026-01-06');
+  ok(W.newAlerts(st, 'K', on, '2026-01-06').length === 1, '알림: 다음 날 다시 켜지면 보냄');
+
+  // 봇 처리(handleWatch) — 임시 장부 파일
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const pth = await import('node:path');
+  const tmp = pth.join(fs.mkdtempSync(pth.join(os.tmpdir(), 'cv-')), 'watchlist.json');
+  const { handleWatch, interpret } = await import('./live.mjs');
+  const lookup = Object.assign((n) => (n === '가나다전자' ? ['KRX', '000000'] : null), { canonical: (n) => (n === '가나' ? '가나다전자' : n) });
+  const ctx = { lookup, watchFile: tmp };
+  const r1 = handleWatch(interpret('관심 가나 대기 매수 15만 손절 14만', lookup), ctx);
+  const saved = W.loadWatch(tmp);
+  ok(/가나다전자/.test(r1) && saved.items.length === 1 && saved.items[0].symbol === '000000' && saved.items[0].buy[0] === 150000, '봇: 별칭으로 등록 → 공식 이름·코드');
+  saved.candidates.push({ id: 7, name: '샘플코인', tier: '장투', market: 'UPBIT', symbol: 'KRW-SMP', src: '방송', date: '01-05', count: 2 });
+  W.saveWatch(saved, tmp);
+  handleWatch(interpret('관심 승인 7 매수 100 손절 90', lookup), ctx);
+  const s2 = W.loadWatch(tmp);
+  ok(s2.candidates.length === 0 && s2.items.find((x) => x.name === '샘플코인')?.buy?.[0] === 100 && s2.items.find((x) => x.name === '샘플코인').tier === '장투', '봇: 후보 승인 + 가격 지정');
+  handleWatch(interpret('관심 삭제 가나', lookup), ctx);
+  ok(W.loadWatch(tmp).items.find((x) => x.name === '가나다전자').status === 'closed', '봇: 삭제 = 종료 표시(기록 유지)');
+
+  // 강조 후보 찾기: 장투 표현 + 종목명, 일상어 코인명은 '코인'이 같이 나와야
+  const { findEmphasis } = await import('./watch_scan.mjs');
+  const re2 = /(?<![가-힣A-Za-z0-9])(가나다전자|보라)/g;
+  const segs = [{ t: 0, text: '가나다전자 이런 애들은' }, { t: 5, text: '장투로 가져가도 괜찮을 것 같아요' }, { t: 9, text: '보라 이거 관심 종목에 넣어 두세요' }];
+  const f = findEmphasis(segs, re2);
+  ok(f.found.length === 1 && f.found[0].name === '가나다전자' && f.found[0].tier === '장투', '강조 후보: 장투 + 종목명, 일상어 "보라"는 제외');
+}
+
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail ? 1 : 0);

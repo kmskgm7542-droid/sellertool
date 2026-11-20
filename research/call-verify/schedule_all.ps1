@@ -2,6 +2,7 @@
 #  - 놓친 실행 보충: PC 가 꺼져 있거나 절전이라 시각을 놓치면 켜질 때 바로 실행(StartWhenAvailable), 정시에 절전에서 깨움(WakeToRun)
 #  - 같은 작업이 겹치면 새로 시작하지 않음, 최대 3시간
 #  - 로그온한 상태에서만 실행(브라우저 로그인 정보가 이 사용자 계정에 묶여 있어 다른 방식으로 돌면 로그인이 풀린 것처럼 보인다)
+#  - CallVerifyWatch: 10분마다 관심종목 가격 확인(watch_task.ps1)
 #  - CallVerifyUpdate: 매일 18:10 최신 코드 받기(auto_update.bat → D:\Projects\_tools\call_verify_update.bat, 결과 data\update.log)
 $ErrorActionPreference = 'Stop'
 $dir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -25,4 +26,6 @@ Reg 'CallVerifyUpdate' 'auto_update.bat' ''   (New-ScheduledTaskTrigger -Daily -
 Reg 'CallVerifyVod'    'vod_run.bat'    ''    (New-ScheduledTaskTrigger -Weekly -DaysOfWeek $wd -At 18:30) $true
 Reg 'CallVerifyDaily'  'daily_run.bat'  ''    (New-ScheduledTaskTrigger -Daily -At 21:30) $true
 Reg 'CallVerifyWeekly' 'weekly_run.bat' ''    (New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 22:00) $true
+# 관심종목 가격 확인(10분마다, 창 없음) — 별도 파일(daily_run 이 작업이 없을 때도 이 파일로 등록)
+& "$dir\watch_task.ps1"
 "등록 완료 — 실행 폴더: $dir"
