@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DATA, describe, evaluate, fmt, loadWatch, newAlerts, saveWatch } from './watchlist.mjs';
+import { history, hitProb, loadForecasts, probText, scoreText } from './forecast.mjs';
 
 const STATE = path.join(DATA, 'watch_state.json');
 const LOG = path.join(DATA, 'watch.log');
@@ -78,6 +79,28 @@ async function send(text) {
 }
 
 const gap = (price, level) => `${price >= level ? '+' : ''}${(((price - level) / level) * 100).toFixed(1)}%`;
+// 다음에 볼 가격까지 도달 확률 한 줄 — 매수 구간 위면 매수 상단, 구간 안이면 손절(아래)·첫 목표(위), 기준선·돌파가
+async function reachLine(it, p) {
+  if (!(p > 0)) return '';
+  const lv = [];
+  if (it.buy && p > it.buy[1]) lv.push(['매수 상단', it.buy[1], true]);
+  else if (it.buy) {
+    if (it.stop?.length) lv.push(['손절', Math.max(...it.stop), true]);
+    if (it.targets?.length) lv.push(['목표', it.targets.find((t) => t > p) ?? it.targets[it.targets.length - 1], false]);
+  }
+  if (it.line && p > it.line) lv.push(['기준선', it.line, true]);
+  if (it.breakout && p < it.breakout) lv.push(['돌파', it.breakout, false]);
+  if (!it.buy && !it.line && !it.breakout && it.targets?.length) { const t = it.targets.find((x) => x > p); if (t) lv.push(['목표', t, false]); }
+  if (!lv.length) return '';
+  const bars = await history(it.market, it.symbol, 300);
+  const hz = it.market === 'KRX' ? [20, 60] : [30, 90];
+  const unit = it.market === 'KRX' ? '거래일' : '일';
+  return lv.map(([lab, v, down]) => {
+    if ((down && p <= v) || (!down && p >= v)) return `${lab} ${fmt(v)}: 이미 도달`;
+    return `${lab} ${fmt(v)}까지 도달 확률 ${probText(hitProb(bars, v, hz, down), hz, unit)}`;
+  }).join(' / ');
+}
+
 function statusLine(it, p) {
   if (!(p > 0)) return `· ${describe(it)} — 시세 없음`;
   const ref = it.buy ? it.buy[1] : it.line ?? it.breakout;
@@ -104,9 +127,24 @@ async function main() {
     const rows = [];
     for (const t of ['장투', '대기', '관심']) {
       const g = active.filter((x) => x.tier === t);
-      if (g.length) rows.push(`[${t}]`, ...g.map((x) => statusLine(x, px[`${x.market}:${x.symbol}`]).replace(` [${t}]`, '')));
+      if (!g.length) continue;
+      rows.push(`[${t}]`);
+      for (const x of g) {
+        const p = px[`${x.market}:${x.symbol}`];
+        rows.push(statusLine(x, p).replace(` [${t}]`, ''));
+        const pr = await reachLine(x, p).catch(() => '');
+        if (pr) rows.push(`   ${pr}`);
+      }
     }
-    const text = `⭐ 관심종목 주간 현황 ${k.date}\n${rows.join('\n')}${w.candidates.length ? `\n\n승인 대기 강조 후보 ${w.candidates.length}건 — "관심 후보"` : ''}\n※ 방송·게시판에서 말한 가격 기록일 뿐 매수 신호가 아닙니다.`;
+    // 방송 가격 예측 적중(자동 기록, 참고용) — 무작위 기대보다 높아야 맞히는 편
+    const fc = loadForecasts().items;
+    const fcRows = [...new Set(fc.map((f) => f.name))].map((n) => {
+      const sc = scoreText(fc.filter((f) => f.name === n));
+      const pend = fc.filter((f) => f.name === n && f.status === 'pending').length;
+      return sc || pend ? `· ${n}: ${sc || '판정 전'}${pend ? ` · 기한 남은 예측 ${pend}건` : ''}` : '';
+    }).filter(Boolean);
+    const fcText = fcRows.length ? `\n\n🎯 방송 가격 예측 적중(주식 20거래일·코인 30일 안, 자동 기록)\n· 전체: ${scoreText(fc) || '판정 전'}\n${fcRows.join('\n')}` : '';
+    const text = `⭐ 관심종목 주간 현황 ${k.date}\n${rows.join('\n')}${fcText}${w.candidates.length ? `\n\n승인 대기 강조 후보 ${w.candidates.length}건 — "관심 후보"` : ''}\n※ 도달 확률은 날짜 예측이 아니라 가능성 범위(변동성 기준~과거 실제 빈도). 방송·게시판에서 말한 가격 기록일 뿐 매수 신호가 아닙니다.`;
     if (dry) console.log(text); else log(`주간 현황 전송: ${await send(text)}`);
     return;
   }

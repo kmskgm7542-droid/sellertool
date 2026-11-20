@@ -12,7 +12,8 @@ import { parseCall } from './lib.mjs';
 import { AMBIGUOUS, MARKET_TALK, buildNameRegex, normalizeSpeech } from './extract_rules.mjs';
 import { loadUserAliases } from './aliases.mjs';
 import { makeLookup, notifyText } from './live.mjs';
-import { DATA, describe, loadWatch, saveWatch } from './watchlist.mjs';
+import { DATA, describe, fmt, loadWatch, saveWatch } from './watchlist.mjs';
+import { findForecasts, history, judge, loadForecasts, saveForecasts, scoreText } from './forecast.mjs';
 
 const VOD = path.join(DATA, 'live_vod');
 const POSTS = path.join(DATA, 'yt_result.json');
@@ -149,12 +150,65 @@ async function main() {
     const prev = fs.existsSync(REVIEW) ? fs.readFileSync(REVIEW, 'utf8').split('\n').filter(Boolean) : [];
     fs.writeFileSync(REVIEW, [...prev, ...review].slice(-200).join('\n') + '\n');
   }
-  if (!news.length && !again.size) return;
+  // 3) 방송 가격 예측 적중 기록(대표 승인 11/20) — 실패해도 후보 알림은 보낸다
+  let resolved = [];
+  try { resolved = await updateForecasts(w, nameRe, lookup); } catch (e) { console.log(`예측 기록 실패: ${e.message}`); }
+  if (!news.length && !again.size && !resolved.length) return;
   const lines = [];
   if (news.length) lines.push(`⭐ 강조 후보 ${news.length}건 — 등록: 관심 승인 번호 [매수 …] / 관심 승인 전부, 버림: 관심 버림 번호`, ...news.slice(0, 15).map((c) => `#${c.id} ${describe(c)}${c.buy ? ' (가격 자동 추정 — 확인)' : ''} · ${c.src} ${c.date}${c.count > 1 ? ` ×${c.count}` : ''}\n   "${c.excerpt.slice(0, 70)}…"`));
   if (again.size) lines.push(`🔁 관심종목 재강조: ${[...again.values()].map((x) => `${x.name}(누적 ${x.mentions})`).join(', ')}`);
   if (review.length) lines.push(`🔎 종목명을 못 찾은 강조 ${review.length}건 → 김이사 확인`);
+  if (resolved.length) {
+    const hit = resolved.filter((f) => f.status === 'hit').length;
+    lines.push(`🎯 방송 가격 예측 판정 ${resolved.length}건: ${scoreText(resolved)} (무작위 기대보다 높아야 맞히는 편)`,
+      ...resolved.slice(-8).map((f) => `· ${f.date} ${f.name} ${fmt(f.price)} ${f.dir} 예상 → ${f.status === 'hit' ? `적중(${f.hit_day.slice(4, 6)}/${f.hit_day.slice(6)})` : `빗나감(기한 내 최${f.dir === '하락' ? '저' : '고'} ${fmt(f.best)})`}`));
+  }
   console.log((await notifyText(lines.join('\n'))) ? '텔레그램 전송' : '(봇 미설정 — 전송 생략)');
+}
+
+// 방송 자막에서 관심종목(+삼성전자·하이닉스)의 가격 예상을 뽑아 쌓고, 기한이 지난 것을 판정한다. 새로 판정된 것을 돌려준다.
+//   처음 실행 때는 받아 둔 지난 방송 전부를 훑는다(관심종목 기준 지난 예측 적중률을 바로 보기 위해).
+export async function updateForecasts(w, nameRe, lookup, file) {
+  const fc = loadForecasts(file);
+  const allow = new Set([...w.items.filter((x) => x.status !== 'closed').map((x) => x.name), '삼성전자', 'SK하이닉스']);
+  const files = fs.existsSync(VOD) ? fs.readdirSync(VOD).filter((f) => f.endsWith('.json')) : [];
+  for (const f of files) {
+    const id = f.slice(0, -5);
+    if (fc.videos[id]) continue;
+    const v = readJson(path.join(VOD, f), {});
+    const start = Number(v.startUnix) || 0;
+    fc.videos[id] = 1;
+    if (!start) continue;
+    for (const x of findForecasts(v.segments || [], nameRe, lookup.canonical, allow)) {
+      const sec = start + Math.floor(x.t);
+      const day = new Date((sec + 9 * 3600) * 1000).toISOString().slice(0, 10).replace(/-/g, '');
+      // 같은 종목·같은 가격을 열흘 안에 또 말하면 한 건으로(반복 횟수만)
+      const dup = fc.items.find((y) => y.name === x.name && y.price === x.price && Math.abs(Date.parse(y.day.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3')) - Date.parse(day.replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))) <= 10 * 86400000);
+      if (dup) { dup.repeat = (dup.repeat || 1) + 1; continue; }
+      const hit = lookup(x.name);
+      if (!hit) continue;
+      fc.items.push({ name: x.name, market: hit[0], symbol: hit[1], day, date: md(sec), price: x.price, excerpt: x.excerpt, video: id, status: 'new' });
+    }
+  }
+  const open = fc.items.filter((f) => f.status === 'new' || f.status === 'pending');
+  const resolved = [];
+  const bySym = new Map();
+  for (const f of open) {
+    const key = `${f.market}:${f.symbol}`;
+    if (!bySym.has(key)) {
+      try { bySym.set(key, await history(f.market, f.symbol, 300)); } catch { bySym.set(key, []); }
+    }
+    const bars = bySym.get(key);
+    if (!bars.length) continue;
+    const j = judge(f, bars, f.market === 'KRX' ? 20 : 30);
+    if (j === null) { f.status = 'dropped'; continue; } // 말한 날 시세와 동떨어진 숫자(계좌 금액 등)
+    const was = f.status;
+    Object.assign(f, j);
+    if (was !== f.status && (f.status === 'hit' || f.status === 'miss')) resolved.push(f);
+  }
+  fc.items = fc.items.filter((f) => f.status !== 'dropped').slice(-500);
+  saveForecasts(fc, file);
+  return resolved;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

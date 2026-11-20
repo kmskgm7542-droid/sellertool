@@ -17,7 +17,7 @@ FILES = ["live_calls.json", "ledger.csv", "results.json", "summary.txt", "report
          "daily.log", "weekly.log", "live.log", "vod.log", "yt_live_run.log", "extract_run.log", "drive_upload_run.log",
          "yt_live_state.json", "extract_state.json",
          # 관심종목 장부·알림 기록·이름 미확인 강조(대표 결정 2026-11-20) — 김이사가 후보·알림이 맞는지 대조
-         "watchlist.json", "watch.log", "watch_last.log", "watch_review.txt",
+         "watchlist.json", "watch.log", "watch_last.log", "watch_review.txt", "forecasts.json",
          # 게시판·텔레그램 원본(대표 결정 2026-11-12) — 새 글이 콜인지 매일 대조하기 위해. 드라이브(비공개)에만, 레포에는 올리지 않는다.
          "yt_result.json", "result.json"]
 

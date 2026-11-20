@@ -247,5 +247,25 @@ const N = 24 * 20;
   ok(f.found.length === 1 && f.found[0].name === '가나다전자' && f.found[0].tier === '장투', '강조 후보: 장투 + 종목명, 일상어 "보라"는 제외');
 }
 
+{
+  // 방송 가격 예측 기록·판정·도달 확률(가상 시세)
+  const F = await import('./forecast.mjs');
+  ok(F.speechPrices('16만4,000원 정도, 17만 원까지, 2만5천').join() === '164000,170000,25000', '예측: 말투 가격 읽기(만·천·쉼표)');
+  ok(F.speechPrices('3시간 뒤 5개, 15% 수익').length === 0, '예측: 단위 없는 숫자·비율은 가격 아님');
+  const re = /(?<![가-힣A-Za-z0-9])(가나다전자)/g;
+  const segs = [{ t: 0, text: '가나다전자 기준으로 17만 원까지 내려올 수 있어요' }, { t: 5, text: '가나다전자 30만 원 물려 있으면' }, { t: 9, text: '다른 이야기' }];
+  const fs2 = F.findForecasts(segs, re, (x) => x, new Set(['가나다전자']));
+  ok(fs2.length === 1 && fs2[0].price === 170000, '예측: "까지 내려올" 가격만, "물려 있으면"은 제외');
+  const bars = Array.from({ length: 40 }, (_, i) => ({ d: String(20260101 + i), o: 200000, h: 202000, l: i === 10 ? 169000 : 198000, c: 200000 }));
+  const j = F.judge({ day: '20260103', price: 170000 }, bars, 20);
+  ok(j.status === 'hit' && j.dir === '하락' && j.hit_day === '20260111' && j.exp >= 0 && j.exp <= 1, '예측: 기한 안 저가가 닿으면 적중 + 무작위 기대 확률');
+  ok(F.judge({ day: '20260103', price: 150000 }, bars, 20).status === 'miss', '예측: 기한 지나도 안 닿으면 빗나감');
+  ok(F.judge({ day: '20260103', price: 201000 }, bars, 20) === null && F.judge({ day: '20260103', price: 3000000 }, bars, 20) === null, '예측: 현재가 언급(2% 안)·동떨어진 숫자는 제외');
+  ok(/적중 1\/2\(50%\) · 무작위 기대 0\.8\/2/.test(F.scoreText([{ status: 'hit', exp: 0.5 }, { status: 'miss', exp: 0.3 }, { status: 'pending' }])), '예측: 적중률과 무작위 기대 비교');
+  const p = F.hitProb(bars, 190000, [20], true, { n: 500 });
+  ok(p && p.mc[20] > 0 && p.mc[20] < 1 && p.emp[20] > 0, '도달 확률: 계산됨(변동성·과거 빈도)');
+  ok(/20거래일 \d+(~\d+)?%/.test(F.probText(p, [20], '거래일')), '도달 확률: 범위 문구');
+}
+
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail ? 1 : 0);
