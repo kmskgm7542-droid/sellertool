@@ -174,7 +174,7 @@ export function parseCalls(text, rules) {
     const before = preText.trim().split(/[\s,·]+/).filter(Boolean);
     const stop = /^(오늘|내일|지금|다시|단타|단기|스윙|중기|장기|사생팬|사생팬전용|회원|전용|현재|현재가|여기|이건|그리고|또는|리스크|추세|눌림|돌파|매도|익절|손절|분할|자리|부근|종가|시간|일봉|이탈|설명|영상|및|등|약|각|그|이|저|더|좀|꼭|잘)$/;
     // "폼좋아지네요" "이탈컷잡고" "설명드린대로" 같은 서술어는 종목명이 아니다
-    const verbish = /(잡고|하고|해서|네요|어요|아요|지요|죠$|습니다|합니다|드린|하는|좋아|컷)/;
+    const verbish = /(잡고|하고|해서|네요|어요|아요|지요|죠$|습니다|합니다|드린|하는|좋아|컷|관점)/; // '스윙관점' 같은 매매 관점 표현(11/24 제주반도체 글)
     const isName = (word, minLen) => {
       const rawWord = word.replace(/^#/, '');
       const cand = strip(rawWord);
