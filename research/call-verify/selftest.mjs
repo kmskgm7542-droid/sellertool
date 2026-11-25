@@ -283,5 +283,12 @@ const N = 24 * 20;
   ok(interpret('가나코인 118 매수 손절 113 목표 153', () => null, now).backdate == null, '소급 표기 없으면 받은 시각 그대로');
 }
 
+{
+  // 김이사 대행 수신함: 허용된 명령만
+  const { allowed } = await import('./inbox.mjs');
+  ok(allowed('가나코인 118 매수 손절 113 목표 153 7일 @11/20 11:26') && allowed('취소 가나코인') && allowed('관심 가나전자 대기 매수 1000') && allowed('별칭 가나=가나다'), '수신함: 콜·취소·관심·별칭 허용');
+  ok(!allowed('rm -rf') && !allowed('아무 말'), '수신함: 그 밖의 줄은 건너뜀');
+}
+
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail ? 1 : 0);

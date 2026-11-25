@@ -16,6 +16,9 @@ python -u tg_collect.py >> "%LOG%" 2>&1
 python -u yt_live.py >> "%LOG%" 2>&1
 rem 봇에 밀린 메시지(별칭 등록·취소·직접 기록)를 먼저 처리해 그날 자막 추출에 바로 반영
 if defined NODE "%NODE%" live.mjs --once >> "%LOG%" 2>&1
+rem 김이사 대행 수신함(드라이브 call-verify-inbox) — 받아서 봇 명령과 같은 규칙으로 처리(콜 기록·소급·취소·관심종목·별칭)
+python -u drive_inbox.py >> "%LOG%" 2>&1
+if defined NODE "%NODE%" inbox.mjs >> "%LOG%" 2>&1
 if exist data\anthropic.json (
   python -u extract_calls.py >> "%LOG%" 2>&1
 ) else (
