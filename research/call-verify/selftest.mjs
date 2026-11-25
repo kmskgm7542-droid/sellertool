@@ -272,5 +272,16 @@ const N = 24 * 20;
   ok(/20거래일 \d+(~\d+)?%/.test(F.probText(p, [20], '거래일')), '도달 확률: 범위 문구');
 }
 
+{
+  // 소급 기록: "@11/20 11:26" — 원래 시각으로 기록, 본문에서 표기 제거, 미래·30일 넘은 날짜는 거절
+  const { interpret } = await import('./live.mjs');
+  const now = Date.UTC(2026, 10, 25, 6, 0); // 11/25 15:00 KST
+  const r = interpret('가나코인 118 매수 손절 113 목표 153 7일 @11/20 11:26', () => null, now);
+  ok(r.kind === 'call' && r.backdate === Date.UTC(2026, 10, 20, 2, 26) / 1000 && !/@|11\/20/.test(r.body) && r.parsed.entry === 118 && r.parsed.sl === 113, '소급: 원래 시각(KST)·본문에서 표기 제거');
+  ok(interpret('가나코인 118 매수 손절 113 목표 153 @11/26', () => null, now).kind === 'backdate-bad'
+    && interpret('가나코인 118 매수 손절 113 목표 153 @9/1', () => null, now).kind === 'backdate-bad', '소급: 미래·30일 넘은 날짜는 거절');
+  ok(interpret('가나코인 118 매수 손절 113 목표 153', () => null, now).backdate == null, '소급 표기 없으면 받은 시각 그대로');
+}
+
 console.log(fail ? `\n실패 ${fail}건` : '\n전부 통과');
 process.exit(fail ? 1 : 0);

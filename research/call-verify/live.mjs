@@ -49,7 +49,7 @@ export function makeLookup() {
 }
 
 // ── 한 줄 해석: 첫 단어 = 종목명(확정), 나머지는 콜 파서 ──
-export function interpret(text, lookup = () => null) {
+export function interpret(text, lookup = () => null, now = Date.now()) {
   const t = String(text).trim();
   const cancel = t.match(/^취소(?:\s+(\S+))?$/);
   if (cancel) return { kind: 'cancel', name: cancel[1] ?? null };
@@ -57,7 +57,21 @@ export function interpret(text, lookup = () => null) {
   if (wc) return wc;
   const al = parseAliasCommand(t);
   if (al) return al;
-  const words = t.split(/\s+/);
+  // 소급 기록: "@11/20 11:26" (또는 "@11/20") — 방송·회원방에서 이미 나온 콜을 늦게 적을 때 원래 시각으로 기록한다.
+  //   늦게 적은 시각으로 기록하면 그사이 움직임을 알고 고른 셈이 되어 검증이 왜곡된다. 최근 30일 안, 지금보다 과거만 허용.
+  let backdate = null;
+  let body = t;
+  const bd = t.match(/@\s*(\d{1,2})\/(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (bd) {
+    body = t.replace(bd[0], ' ').replace(/\s+/g, ' ').trim();
+    const nowSec = Math.floor(now / 1000);
+    const y = new Date(now + 9 * 3600000).getUTCFullYear();
+    let sec = Math.floor(Date.UTC(y, Number(bd[1]) - 1, Number(bd[2]), Number(bd[3] ?? 9), Number(bd[4] ?? 0)) / 1000) - 9 * 3600;
+    if (sec > nowSec) sec = Math.floor(Date.UTC(y - 1, Number(bd[1]) - 1, Number(bd[2]), Number(bd[3] ?? 9), Number(bd[4] ?? 0)) / 1000) - 9 * 3600; // 연초에 작년 날짜
+    if (!(sec <= nowSec && nowSec - sec <= 30 * 86400)) return { kind: 'backdate-bad' };
+    backdate = sec;
+  }
+  const words = body.split(/\s+/);
   if (words.length < 2) return { kind: 'ignore' };
   const typed = words[0].replace(/^#/, '');
   const name = typeof lookup.canonical === 'function' ? lookup.canonical(typed) : typed; // 별칭이면 공식 이름으로 기록
@@ -79,7 +93,8 @@ export function interpret(text, lookup = () => null) {
     lines.push(`❌ 검증 제외로 기록: ${name} — ${p.flags.filter((f) => /없음|이상|미지원/.test(f)).join(' / ') || '형식 확인'}`);
     lines.push('형식: 종목 [진입가|현재가] 매수 손절 N 목표 N [N] [기간]');
   }
-  return { kind: 'call', name, parsed: p, hit, reply: lines.join('\n') };
+  if (backdate) lines.splice(1, 0, `🕘 원래 시각으로 소급 기록: ${kst(backdate)}`);
+  return { kind: 'call', name, parsed: p, hit, backdate, body, reply: lines.join('\n') };
 }
 
 // ── 기록 파일(run.mjs parse 가 읽는 텔레그램 내보내기 형식) ──
@@ -87,8 +102,9 @@ function appendCall(msg, res) {
   const j = readJson(FILE, { name: CHANNEL, messages: [] });
   j.messages.push({
     id: `live${msg.message_id}`, type: 'message', channel: CHANNEL, date_precision: 'exact',
-    date: new Date(msg.date * 1000).toISOString(), date_unixtime: String(msg.date),
-    name: res.name, text: msg.text, ok_hint: res.parsed.ok ? 1 : 0,
+    date: new Date((res.backdate ?? msg.date) * 1000).toISOString(), date_unixtime: String(res.backdate ?? msg.date),
+    name: res.name, text: res.backdate ? res.body : msg.text, ok_hint: res.parsed.ok ? 1 : 0, // 소급 표기(@날짜)는 본문에서 뺀다 — 가격으로 오인 방지
+    ...(res.backdate ? { backdated: true, sent_at: new Date(msg.date * 1000).toISOString() } : {}),
   });
   fs.writeFileSync(FILE, JSON.stringify(j, null, 1));
 }
@@ -224,6 +240,7 @@ export function handleWatch(res, ctx) {
 async function handleLine(msg, ctx) {
   const res = interpret(msg.text, ctx.lookup);
   if (res.kind === 'ignore') return;
+  if (res.kind === 'backdate-bad') { await ctx.reply('소급 시각은 최근 30일 안의 과거만 됩니다. 예) 종목 1000 매수 손절 900 목표 1200 7일 @11/20 11:26'); return; }
   if (res.kind === 'cancel') {
     const m = cancelCall(res.name);
     await ctx.reply(m ? `↩ 취소: ${kst(Number(m.date_unixtime))} ${m.name}` : '취소할 기록이 없습니다.');
