@@ -60,10 +60,12 @@ async def from_web(done):
                 return None
             # 목록의 파일 행에는 data-id(드라이브 파일 ID)가 붙어 있다. 이름이 inbox_ 로 시작하는 것만.
             rows = await page.evaluate("""() => [...document.querySelectorAll('[data-id]')].map(e => ({
-                id: e.getAttribute('data-id'), t: (e.innerText || e.getAttribute('aria-label') || '').split('\\n')[0] }))""")
+                id: e.getAttribute('data-id'), t: (e.getAttribute('aria-label') || '') + ' ' + (e.innerText || '') }))""")
             seen = {}
             for r in rows:
-                name = next((w for w in r["t"].split() if w.startswith("inbox_") and w.endswith(".txt")), None)
+                import re
+                m = re.search(r"inbox_[^\s/\\\"']+?\.txt", r["t"] or "")  # 행 텍스트·aria-label 어디든 파일명이 있으면
+                name = m.group(0) if m else None
                 if name and r["id"] and len(r["id"]) > 15:
                     seen[name] = r["id"]
             for name, fid in sorted(seen.items()):
