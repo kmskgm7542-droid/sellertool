@@ -12,7 +12,7 @@ import { parseCall } from './lib.mjs';
 import { AMBIGUOUS, MARKET_TALK, buildNameRegex, normalizeSpeech } from './extract_rules.mjs';
 import { loadUserAliases } from './aliases.mjs';
 import { makeLookup, notifyText } from './live.mjs';
-import { DATA, describe, fmt, loadWatch, saveWatch } from './watchlist.mjs';
+import { DATA, describe, fmt, loadWatch, saveWatch, upsertItem } from './watchlist.mjs';
 import { findForecasts, history, judge, loadForecasts, saveForecasts, scoreText } from './forecast.mjs';
 
 const VOD = path.join(DATA, 'live_vod');
@@ -82,11 +82,13 @@ export function mergeCandidate(w, c, lookup) {
     if (!prev.buy && !prev.stop && c.levels?.buy) Object.assign(prev, c.levels); // 가격은 처음 읽힌 것 유지
     return { type: 'more', cand: prev };
   }
+  // 대표 결정(11/25): 승인 단계 없이 바로 관심종목으로 등록 — 필요 없으면 "관심 삭제 종목"
   const hit = lookup(c.name);
-  const cand = { id: ++w.seq, name: c.name, tier: c.tier, market: hit?.[0] ?? null, symbol: hit?.[1] ?? null, src: c.src, date: c.date, count: c.count, excerpt: c.excerpt, ...c.levels };
-  w.candidates.push(cand);
-  if (w.candidates.length > 60) w.candidates = w.candidates.slice(-60);
-  return { type: 'new', cand };
+  const added = upsertItem(w, { name: c.name, tier: c.tier, levels: c.levels || {}, hit, source: c.src });
+  added.mentions = (added.mentions || 0) + c.count;
+  added.last_emphasis = c.date;
+  added.auto = true;
+  return { type: 'new', cand: { ...added, src: c.src, date: c.date, count: c.count, excerpt: c.excerpt } };
 }
 
 async function main() {
@@ -141,7 +143,7 @@ async function main() {
 
   console.log(`강조 후보 새로 ${news.length}건 · 관심종목 재강조 ${again.size}건 · 이름 미확인 ${review.length}건`);
   if (dry) {
-    for (const c of news) console.log(`#${c.id} ${describe(c)} · ${c.src} ${c.date} ×${c.count} | ${c.excerpt}`);
+    for (const c of news) console.log(`${describe(c)} · ${c.src} ${c.date} ×${c.count} | ${c.excerpt}`);
     return;
   }
   saveWatch(w);
@@ -155,7 +157,7 @@ async function main() {
   try { resolved = await updateForecasts(w, nameRe, lookup); } catch (e) { console.log(`예측 기록 실패: ${e.message}`); }
   if (!news.length && !again.size && !resolved.length) return;
   const lines = [];
-  if (news.length) lines.push(`⭐ 강조 후보 ${news.length}건 — 등록: 관심 승인 번호 [매수 …] / 관심 승인 전부, 버림: 관심 버림 번호`, ...news.slice(0, 15).map((c) => `#${c.id} ${describe(c)}${c.buy ? ' (가격 자동 추정 — 확인)' : ''} · ${c.src} ${c.date}${c.count > 1 ? ` ×${c.count}` : ''}\n   "${c.excerpt.slice(0, 70)}…"`));
+  if (news.length) lines.push(`⭐ 강조 종목 자동 등록 ${news.length}건 — 필요 없으면 "관심 삭제 종목", 가격 수정은 "관심 종목 매수 …"`, ...news.slice(0, 15).map((c) => `· ${describe(c)}${c.buy ? ' (가격 자동 추정 — 확인)' : ''} · ${c.src} ${c.date}${c.count > 1 ? ` ×${c.count}` : ''}\n   "${c.excerpt.slice(0, 70)}…"`));
   if (again.size) lines.push(`🔁 관심종목 재강조: ${[...again.values()].map((x) => `${x.name}(누적 ${x.mentions})`).join(', ')}`);
   if (review.length) lines.push(`🔎 종목명을 못 찾은 강조 ${review.length}건 → 김이사 확인`);
   if (resolved.length) {

@@ -98,10 +98,10 @@ export function interpret(text, lookup = () => null, now = Date.now()) {
 }
 
 // ── 기록 파일(run.mjs parse 가 읽는 텔레그램 내보내기 형식) ──
-function appendCall(msg, res) {
+function appendCall(msg, res, channel = CHANNEL) {
   const j = readJson(FILE, { name: CHANNEL, messages: [] });
   j.messages.push({
-    id: `live${msg.message_id}`, type: 'message', channel: CHANNEL, date_precision: 'exact',
+    id: `live${msg.message_id}`, type: 'message', channel, date_precision: 'exact',
     date: new Date((res.backdate ?? msg.date) * 1000).toISOString(), date_unixtime: String(res.backdate ?? msg.date),
     name: res.name, text: res.backdate ? res.body : msg.text, ok_hint: res.parsed.ok ? 1 : 0, // 소급 표기(@날짜)는 본문에서 뺀다 — 가격으로 오인 방지
     ...(res.backdate ? { backdated: true, sent_at: new Date(msg.date * 1000).toISOString() } : {}),
@@ -279,7 +279,7 @@ async function handleLine(msg, ctx) {
       : `📒 별칭 등록: ${res.from} → ${res.to}\n⚠ "${res.to}" 은(는) 종목 목록에서 못 찾았습니다. 공식 종목명(예: 제이스텍)인지 확인해 주세요.`);
     return;
   }
-  appendCall(msg, res);
+  appendCall(msg, res, ctx.channel);
   console.log(`[${kst(msg.date)}] ${res.name}: ${res.parsed.ok ? 'OK' : '제외'}`);
   await ctx.reply(res.reply);
 }
